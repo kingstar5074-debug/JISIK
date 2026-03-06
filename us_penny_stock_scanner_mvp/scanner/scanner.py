@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, List
 
-from ..utils.logger import get_logger
-from .filters import ScanFilters, passes_filters
-from .market_hours import MarketClock
-from .models import QuoteSnapshot
-from .providers.base import MarketDataProvider
+from utils.logger import get_logger
+from scanner.filters import ScanFilters, passes_filters
+from scanner.market_hours import MarketClock
+from scanner.models import QuoteSnapshot
+from scanner.providers.base import MarketDataProvider
 
 log = get_logger(__name__)
 

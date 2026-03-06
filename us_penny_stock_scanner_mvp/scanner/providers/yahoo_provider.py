@@ -6,9 +6,9 @@ from typing import Dict, Iterable, Mapping, Optional
 
 import yfinance as yf
 
-from ...utils.logger import get_logger
-from ..models import MarketSession, QuoteSnapshot
-from .base import MarketDataProvider
+from utils.logger import get_logger
+from scanner.models import MarketSession, QuoteSnapshot
+from scanner.providers.base import MarketDataProvider
 
 log = get_logger(__name__)
 

@@ -6,7 +6,7 @@ from typing import Iterable, List, Mapping
 from rich.console import Console
 from rich.table import Table
 
-from ..scanner.models import MarketSession, QuoteSnapshot
+from scanner.models import MarketSession, QuoteSnapshot
 
 
 def group_by_session(items: Iterable[QuoteSnapshot]) -> Mapping[MarketSession, List[QuoteSnapshot]]:
