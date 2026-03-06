@@ -1,0 +1,25 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Environment / secrets (common)
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+credentials*.json
+**/secrets*.json
+
+# Node / Python (common)
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
