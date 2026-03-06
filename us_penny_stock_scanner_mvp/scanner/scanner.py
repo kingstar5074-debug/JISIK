@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Mapping
+from typing import Dict, Iterable, List, Optional, Mapping
 
 from utils.logger import get_logger
 from scanner.filters import ScanFilters
@@ -14,6 +14,7 @@ from scanner.strategy_profiles import (
     get_effective_filters,
     get_session_weights,
 )
+from scanner.theme_tagger import detect_theme_tags
 
 log = get_logger(__name__)
 
@@ -45,6 +46,7 @@ class ScanResult:
     fetch_success: int
     fetch_failed: int
     filter_report: FilterReport
+    theme_tags: Dict[str, List[str]]
 
 
 def _filter_failure_reason(q: QuoteSnapshot, f: ScanFilters) -> Optional[str]:
@@ -202,6 +204,10 @@ class PennyStockScanner:
         matched: List[QuoteSnapshot] = [q for q, _ in scored_pairs]
         scores: List[StockScore] = [s for _, s in scored_pairs]
 
+        theme_map: Dict[str, List[str]] = {}
+        for q in matched:
+            theme_map[q.symbol] = detect_theme_tags(q.symbol)
+
         filter_report = FilterReport(
             total_requested=total_requested,
             fetch_success=fetch_success,
@@ -248,5 +254,6 @@ class PennyStockScanner:
             fetch_success=fetch_success,
             fetch_failed=fetch_failed,
             filter_report=filter_report,
+            theme_tags=theme_map,
         )
 

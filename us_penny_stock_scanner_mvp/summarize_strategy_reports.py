@@ -76,6 +76,9 @@ def main() -> int:
     top_symbol_freq: Dict[str, Counter] = {
         name: Counter() for name in profile_names
     }
+    theme_freq: Dict[str, Counter] = {
+        name: Counter() for name in profile_names
+    }
 
     total_reports = len(loaded)
     skipped_reports_for_stats = 0
@@ -103,7 +106,7 @@ def main() -> int:
             if isinstance(ascore, (int, float)):
                 avg_scores[name].append(float(ascore))
 
-            # top_symbols 빈도 집계
+            # top_symbols / theme 빈도 집계
             top_syms = s_data.get("top_symbols") or []
             if isinstance(top_syms, list):
                 for entry in top_syms:
@@ -112,6 +115,11 @@ def main() -> int:
                     sym = entry.get("symbol")
                     if isinstance(sym, str) and sym.strip():
                         top_symbol_freq[name][sym.strip().upper()] += 1
+                    tags = entry.get("theme_tags") or []
+                    if isinstance(tags, list):
+                        for t in tags:
+                            if isinstance(t, str) and t.strip():
+                                theme_freq[name][t.strip().lower()] += 1
 
         # best strategy by average_score (한 리포트당 1승, 동점 시 첫 번째만)
         per_report_scores: Dict[str, float] = {}
@@ -182,6 +190,15 @@ def main() -> int:
         else:
             console.print(f"[{name} 상위 빈도 종목] (없음)")
 
+        # 테마 빈도
+        tfreq = theme_freq[name]
+        if tfreq:
+            console.print(f"[{name} 상위 테마]")
+            for theme, cnt in tfreq.most_common(5):
+                console.print(f"- {theme}: {cnt}회")
+        else:
+            console.print(f"[{name} 상위 테마] (없음)")
+
         summaries[name] = {
             "number_of_runs": runs,
             "average_returned_count": avg_ret,
@@ -193,6 +210,7 @@ def main() -> int:
             "stability_score": stability_score,
             "best_strategy_win_count": wins,
             "best_strategy_win_rate": win_rate,
+            "theme_frequency": dict(tfreq.most_common()),
         }
 
     # 가장 자주 승리한 전략
@@ -213,6 +231,12 @@ def main() -> int:
     png_avg_path = reports_dir / f"strategy_summary_avg_score_{ts}.png"
     png_win_path = reports_dir / f"strategy_summary_win_rate_{ts}.png"
     png_stab_path = reports_dir / f"strategy_summary_stability_score_{ts}.png"
+    png_theme_path = reports_dir / f"strategy_summary_theme_distribution_{ts}.png"
+
+    # 전체 테마 빈도 (전략 합산)
+    global_theme_counter: Counter = Counter()
+    for name in profile_names:
+        global_theme_counter.update(theme_freq[name])
 
     summary_report = {
         "timestamp": ts,
@@ -232,6 +256,7 @@ def main() -> int:
         "top_symbol_frequency": {
             name: dict(top_symbol_freq[name].most_common(50)) for name in profile_names
         },
+        "theme_frequency": dict(global_theme_counter.most_common()),
     }
 
     try:
@@ -278,7 +303,7 @@ def main() -> int:
     except Exception as e:  # pragma: no cover
         console.print(f"요약 CSV 저장 실패: {e}")
 
-    # 시각화 (평균 score / win_rate / stability_score)
+    # 시각화 (평균 score / win_rate / stability_score / theme 분포)
     try:
         names = profile_names
         avg_scores_chart = [
@@ -318,6 +343,21 @@ def main() -> int:
         fig3.tight_layout()
         fig3.savefig(png_stab_path)
         plt.close(fig3)
+
+        if global_theme_counter:
+            themes = []
+            counts = []
+            for theme, cnt in global_theme_counter.most_common(20):
+                themes.append(theme)
+                counts.append(cnt)
+            fig4, ax4 = plt.subplots()
+            ax4.bar(themes, counts)
+            ax4.set_title("Theme frequency (summary)")
+            ax4.set_xlabel("Theme")
+            ax4.set_ylabel("Count")
+            fig4.tight_layout()
+            fig4.savefig(png_theme_path)
+            plt.close(fig4)
     except Exception as e:  # pragma: no cover
         console.print(f"요약 차트 생성 실패: {e}")
 
@@ -327,6 +367,7 @@ def main() -> int:
     console.print(f"- 차트: {png_avg_path}")
     console.print(f"- 차트: {png_win_path}")
     console.print(f"- 차트: {png_stab_path}")
+    console.print(f"- 차트: {png_theme_path}")
 
     return 0
 

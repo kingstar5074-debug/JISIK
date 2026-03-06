@@ -157,6 +157,7 @@ python browse_reports.py
 앞으로의 배치에서도 **“사람이 직접 최종 결정을 내리는 구조”** 를 유지한 채,  
 스캐너와 리포트 도구의 **분석 품질과 해석 편의성**만 단계적으로 강화하는 것을 목표로 합니다.
 
+#  us_penny_stock_scanner_mvp
 # us_penny_stock_scanner_mvp
 
 ## 1. 프로젝트 소개
@@ -721,4 +722,153 @@ python summarize_strategy_reports.py
 
 모든 출력은 `.env` 의 `REPORTS_DIR` 아래에 저장되며,  
 저장에 실패해도 콘솔 요약 출력은 유지됩니다.
+
+## 14. Theme Tagging
+
+이 프로젝트는 심볼 문자열을 기반으로 **간단한 테마 분류**를 수행해  
+전략 성능을 섹터/테마 단위로도 조망할 수 있도록 준비합니다.
+
+### 14-1. Theme Tagging Engine
+
+`scanner/theme_tagger.py` 에서 다음 함수를 제공합니다.
+
+```python
+from scanner.theme_tagger import detect_theme_tags
+
+tags = detect_theme_tags("TPET")
+```
+
+현재 구현은 **완전히 규칙 기반**이며, 뉴스·재무·주문과는 전혀 무관합니다.
+
+- 입력: `symbol: str`
+- 출력: `list[str]` (테마 태그 목록)
+
+내부 룰(대문자 변환 후 부분 문자열 포함 여부):
+
+- `oil` 테마
+  - 키워드: `OIL`, `PET`, `ENER`, `DRILL`, `GAS`
+- `ai` 테마
+  - 키워드: `AI`, `DATA`, `TECH`, `ROBOT`, `ML`
+- `biotech` 테마
+  - 키워드: `BIO`, `PHAR`, `MED`, `THERA`
+- `shipping` 테마
+  - 키워드: `SHIP`, `TANK`, `SEA`, `MARINE`
+- 어느 테마에도 해당하지 않으면
+  - `["unknown"]` 반환
+
+한 심볼이 여러 키워드에 매칭되면 다중 태그를 가질 수 있습니다.  
+예: `"BIOAI"` → `["ai", "biotech"]` 와 같이 반환될 수 있습니다.
+
+### 14-2. 전략 비교 리포트에서의 theme_tags
+
+`compare_strategies.py` 실행 시:
+
+```bash
+python compare_strategies.py
+```
+
+각 전략별 상위 종목(top_symbols)에 대해:
+
+- `detect_theme_tags(symbol)` 를 호출해 `theme_tags` 필드를 추가합니다.
+
+JSON 리포트(`strategy_compare_*.json`) 예:
+
+```json
+{
+  "strategies": {
+    "balanced": {
+      "top_symbols": [
+        {
+          "symbol": "TPET",
+          "score": 23.5,
+          "theme_tags": ["oil"]
+        }
+      ]
+    }
+  },
+  "theme_frequency": {
+    "oil": 6,
+    "biotech": 3,
+    "ai": 2
+  }
+}
+```
+
+- `theme_frequency` 는 한 번의 compare 실행에서  
+  모든 전략의 상위 종목들에 등장한 테마의 단순 카운트입니다.
+
+CSV 리포트(`strategy_compare_*.csv`)에서도:
+
+- `theme_tags` 컬럼이 추가되어
+  - `oil` / `ai,biotech` 등의 문자열로 테마 태그를 확인할 수 있습니다.
+
+### 14-3. summary 리포트에서의 테마 누적
+
+`summarize_strategy_reports.py` 는 여러 개의 compare 리포트를 모아  
+전략별 누적 통계를 계산할 뿐 아니라, **전략별 테마 빈도(theme_frequency)** 도 함께 집계합니다.
+
+```bash
+python summarize_strategy_reports.py
+```
+
+summary JSON(`strategy_summary_*.json`) 구조 예:
+
+```json
+{
+  "strategies": {
+    "balanced": {
+      "number_of_runs": 12,
+      "average_score_mean": 21.4,
+      "stability_score": 6.52,
+      "theme_frequency": {
+        "oil": 12,
+        "ai": 3,
+        "biotech": 5
+      }
+    }
+  },
+  "theme_frequency": {
+    "oil": 20,
+    "biotech": 11,
+    "ai": 6
+  }
+}
+```
+
+- `strategies.*.theme_frequency`  
+  - 해당 전략이 상위 종목으로 자주 선택한 테마들의 누적 빈도
+- 루트 레벨 `theme_frequency`  
+  - 모든 전략을 합친 전체 테마 빈도
+
+또한, summary 실행 시 다음 차트가 추가로 생성됩니다.
+
+- `strategy_summary_theme_distribution_YYYYMMDD_HHMMSS.png`
+  - 전체 리포트에서 자주 등장한 테마들의 bar chart
+
+이를 통해 **전략별로 어떤 테마 종목을 자주 선택하는지**,  
+**전체적으로 어떤 테마가 많이 포착되는지** 를 빠르게 파악할 수 있습니다.
+
+### 14-4. browse_reports 에서 top theme 확인
+
+`browse_reports.py` 실행 시 summary 리포트 목록에서:
+
+- `avg stability leader` 와 함께
+- `top theme`(summary 기준 가장 자주 등장한 테마)를 추가로 표시합니다.
+
+예:
+
+```text
+[summary 리포트 목록]
+1. strategy_summary_20260306_140500.json
+   - timestamp: 20260306_140500 / valid_reports: 12
+   - top winner: aggressive (41.7%)
+   - avg stability leader: balanced
+   - top theme: oil
+   - filters: tags=[premarket, polygon], provider=polygon, session=premarket
+```
+
+이를 바탕으로,  
+예를 들어 **유가 테마(oil)** 에서 어떤 전략이 안정적으로 강한지,  
+**biotech** 나 **ai** 테마에서의 전략 성능이 어떤지 등을  
+차후 배치에서 보다 정교하게 분석할 수 있습니다.
 

@@ -89,6 +89,28 @@ def main() -> int:
                         best_stab_name = name
             stability_leader = best_stab_name if best_stab_name is not None else "(없음)"
 
+            # top theme 계산 (전체 전략 합산)
+            from collections import Counter
+
+            theme_counter: Counter[str] = Counter()
+            root_theme_freq = data.get("theme_frequency")
+            if isinstance(root_theme_freq, dict):
+                for k, v in root_theme_freq.items():
+                    if isinstance(v, (int, float)):
+                        theme_counter[k] += int(v)
+            else:
+                for name in profile_names:
+                    s = strategies.get(name) or {}
+                    tf = s.get("theme_frequency") or {}
+                    if isinstance(tf, dict):
+                        for k, v in tf.items():
+                            if isinstance(v, (int, float)):
+                                theme_counter[k] += int(v)
+            if theme_counter:
+                top_theme = theme_counter.most_common(1)[0][0]
+            else:
+                top_theme = "(없음)"
+
             used_filters = data.get("used_filters") or {}
             tags = used_filters.get("tags") or []
             provider_filter = used_filters.get("provider") or "(없음)"
@@ -99,6 +121,9 @@ def main() -> int:
             console.print(f"   - timestamp: {ts} / valid_reports: {valid}")
             console.print(f"   - top winner: {win_info}")
             console.print(f"   - avg stability leader: {stability_leader}")
+            console.print(
+                f"   - top theme: {top_theme}"
+            )
             console.print(
                 f"   - filters: tags=[{tag_str}], provider={provider_filter}, session={session_filter}"
             )

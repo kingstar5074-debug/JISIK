@@ -19,6 +19,7 @@ from scanner.market_hours import MarketClock
 from scanner.providers.factory import get_market_data_provider
 from scanner.scanner import PennyStockScanner, ScanResult
 from scanner.strategy_profiles import get_strategy_profile
+from scanner.theme_tagger import detect_theme_tags
 from universe.generated_universe import GeneratedUniverseProvider
 from universe.watchlist_universe import WatchlistUniverseProvider
 from utils.logger import get_logger
@@ -123,8 +124,12 @@ def main() -> int:
     top_n = 5
     symbol_sets: Dict[str, set] = {}
     summaries: Dict[str, Dict] = {}
+    theme_frequency_global: Dict[str, int] = {}
     for pname in profile_names:
         res = results.get(pname)
+        if res is None:
+            continue
+
         console.print(f"\n[{pname}]")
         console.print(
             f"통과 {res.filter_report.passed_filters} / 출력 {res.filter_report.returned_count}"
@@ -138,8 +143,19 @@ def main() -> int:
             console.print("평균 score: N/A")
 
         console.print(f"상위 {min(top_n, len(res.scores))} 종목:")
+        top_list = []
         for s in res.scores[:top_n]:
-            console.print(f"- {s.symbol} {s.total_score:.2f}")
+            tags = detect_theme_tags(s.symbol)
+            console.print(f"- {s.symbol} {s.total_score:.2f} (themes: {', '.join(tags)})")
+            top_list.append(
+                {
+                    "symbol": s.symbol,
+                    "score": s.total_score,
+                    "theme_tags": tags,
+                }
+            )
+            for t in tags:
+                theme_frequency_global[t] = theme_frequency_global.get(t, 0) + 1
 
         symbol_sets[pname] = {q.symbol for q in res.matched}
 
@@ -147,10 +163,7 @@ def main() -> int:
             "passed_filters": res.filter_report.passed_filters,
             "returned_count": res.filter_report.returned_count,
             "average_score": avg_score,
-            "top_symbols": [
-                {"symbol": s.symbol, "score": s.total_score}
-                for s in res.scores[:top_n]
-            ],
+            "top_symbols": top_list,
         }
 
     bal = symbol_sets.get("balanced", set())
@@ -212,6 +225,7 @@ def main() -> int:
             "aggressive_only": sorted(agg_only),
             "conservative_only": sorted(cons_only),
         },
+        "theme_frequency": theme_frequency_global,
     }
 
     try:
@@ -237,6 +251,7 @@ def main() -> int:
                     "volume_ratio",
                     "average_volume",
                     "dollar_volume",
+                    "theme_tags",
                 ]
             )
             for pname in profile_names:
@@ -246,6 +261,7 @@ def main() -> int:
                 qmap = {q.symbol: q for q in res.matched}
                 for rank, s in enumerate(res.scores, start=1):
                     q = qmap.get(s.symbol)
+                    tags = detect_theme_tags(s.symbol)
                     writer.writerow(
                         [
                             pname,
@@ -260,6 +276,7 @@ def main() -> int:
                             "" if q is None or q.volume_ratio is None else q.volume_ratio,
                             "" if q is None or q.average_volume is None else q.average_volume,
                             "" if q is None or q.dollar_volume is None else q.dollar_volume,
+                            ",".join(tags),
                         ]
                     )
     except Exception as e:  # pragma: no cover
