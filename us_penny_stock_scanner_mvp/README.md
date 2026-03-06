@@ -872,3 +872,312 @@ summary JSON(`strategy_summary_*.json`) 구조 예:
 **biotech** 나 **ai** 테마에서의 전략 성능이 어떤지 등을  
 차후 배치에서 보다 정교하게 분석할 수 있습니다.
 
+## 15. Theme-aware Strategy Advisor
+
+이 프로젝트에는 특정 테마에서 어떤 전략이 더 적합한지 빠르게 비교하기 위한  
+**Theme-aware Strategy Advisor**(`theme_strategy_advisor.py`) 도 포함되어 있습니다.
+
+### 15-1. 목적
+
+- `compare_strategies.py` 로 생성된 여러 compare 리포트들 중에서
+  - 특정 테마(예: `oil`, `ai`, `biotech`, `shipping`, `unknown`)에 해당하는 상위 종목만 추려
+  - `balanced` / `aggressive` / `conservative` 전략별로
+    - 표본 수(count)
+    - 평균 점수(average_score)
+    - 변동성(score_std_dev)
+    - 안정성 점수(stability_score)
+  를 비교하고,  
+  - **평균 점수 기준 최강 전략**과
+  - **안정성까지 고려한 추천 전략**을 알려주는 도구입니다.
+
+### 15-2. 입력 환경변수
+
+`.env` 에서 다음 값을 설정해 Theme Strategy Advisor 의 동작 범위를 제어할 수 있습니다.
+
+- `THEME_ADVISOR_THEME`  
+  - 분석할 테마 이름 (예: `oil`, `ai`, `biotech`, `shipping`, `unknown`)
+  - 이 테마가 `theme_tags` 에 포함된 종목만 분석 대상이 됩니다.
+- `THEME_ADVISOR_PROVIDER`  
+  - compare 리포트의 `provider` 필터 (예: `yahoo`, `polygon`)
+  - 비워 두면 provider 필터를 적용하지 않습니다.
+- `THEME_ADVISOR_SESSION`  
+  - compare 리포트의 `session` 필터 (예: `premarket`, `regular`, `afterhours`, `closed`)
+  - 비워 두면 session 필터를 적용하지 않습니다.
+- `THEME_ADVISOR_TAGS`  
+  - compare 리포트의 `environment_tags` 필터
+  - 쉼표로 구분된 태그 목록 (예: `high-volatility,oil-theme`)
+  - **AND 조건**으로 적용되며, 모든 태그를 포함하는 리포트만 사용합니다.
+- `THEME_ADVISOR_MIN_COUNT`  
+  - 추천 전략에서 사용할 최소 표본 수
+  - 전략별 테마 표본(`count`)이 이 값보다 작으면 추천 후보에서 제외됩니다.
+
+### 15-3. 계산 항목
+
+`theme_strategy_advisor.py` 는 REPORTS_DIR 안의 `strategy_compare_*.json` 을 읽어,  
+선택된 테마(`THEME_ADVISOR_THEME`)가 포함된 상위 종목만 대상으로 각 전략별 통계를 계산합니다.
+
+전략별 계산 항목:
+
+- `count`  
+  - 선택된 테마를 포함하는 상위 종목의 개수
+- `average_score`  
+  - 해당 종목들의 score 평균
+- `score_std_dev`  
+  - 해당 종목들의 score 표준편차  
+  - 표본이 1개 이하이면 `0.0` 으로 처리
+- `stability_score`  
+  - 공식:  
+    \[
+    \text{stability\_score}
+      = \frac{\text{average\_score}}{1 + \text{score\_std\_dev}}
+    \]
+  - 평균 점수는 높고, 표준편차는 낮을수록 stability_score 가 커집니다.
+
+데이터가 전혀 없으면:
+
+- `count = 0`
+- `average_score = 0.0`
+- `score_std_dev = 0.0`
+- `stability_score = 0.0`
+
+### 15-4. 추천 규칙
+
+Advisor 는 두 가지 기준을 모두 제공합니다.
+
+- `best_by_average_score`  
+  - 단순히 `average_score` 가 가장 높은 전략
+  - `count > 0` 인 전략들만 고려
+- `recommended_by_stability`  
+  - 안정성까지 고려한 최종 추천 전략
+  - 규칙:
+    1. `count >= THEME_ADVISOR_MIN_COUNT` 인 전략만 후보
+    2. 후보 중 `stability_score` 가 가장 높은 전략 선택
+    3. 동점이면 `average_score` 가 더 높은 전략 우선
+    4. 그래도 동점이면 `count` 가 더 많은 전략 우선
+    5. 모든 전략이 `min_count` 미만이면  
+       → `recommended_by_stability: 추천 보류 (표본 부족)` 으로 표시
+
+이렇게 함으로써,
+
+- **“점수만 높은 극단적 전략”** 과  
+- **“점수와 안정성을 모두 고려한 전략”** 을 구분해서 볼 수 있습니다.
+
+### 15-5. 실행 방법 및 출력 예시
+
+```bash
+python theme_strategy_advisor.py
+```
+
+콘솔 출력 예:
+
+```text
+Theme Strategy Advisor
+theme: oil
+provider filter: polygon
+session filter: premarket
+tag filter: high-volatility, oil-theme
+min_count: 3
+REPORTS_DIR: /.../reports
+used compare reports: 12
+
+[balanced]
+count=8
+average_score=21.44
+score_std_dev=2.11
+stability_score=6.89
+
+[aggressive]
+count=10
+average_score=24.12
+score_std_dev=5.80
+stability_score=3.55
+
+[conservative]
+count=6
+average_score=19.88
+score_std_dev=1.22
+stability_score=8.95
+
+best_by_average_score: aggressive
+recommended_by_stability: conservative
+```
+
+데이터가 부족한 전략은 `count` 와 `stability_score` 에서 자연스럽게 드러나며,  
+모든 전략의 `count` 가 `THEME_ADVISOR_MIN_COUNT` 미만이면 추천이 보류됩니다.
+
+### 15-6. 저장 파일
+
+Advisor 실행 시 다음 파일이 `REPORTS_DIR` 아래에 생성됩니다.
+
+- JSON: `theme_strategy_advisor_YYYYMMDD_HHMMSS.json`
+- CSV : `theme_strategy_advisor_YYYYMMDD_HHMMSS.csv`
+- PNG : `theme_strategy_advisor_YYYYMMDD_HHMMSS.png`
+
+JSON 구조 예:
+
+```json
+{
+  "timestamp": "2026-03-06T14:05:00",
+  "theme": "oil",
+  "used_filters": {
+    "provider": "polygon",
+    "session": "premarket",
+    "tags": ["high-volatility", "oil-theme"],
+    "min_count": 3
+  },
+  "used_compare_reports": 12,
+  "strategies": {
+    "balanced": {
+      "count": 8,
+      "average_score": 21.44,
+      "score_std_dev": 2.11,
+      "stability_score": 6.89
+    },
+    "aggressive": {
+      "count": 10,
+      "average_score": 24.12,
+      "score_std_dev": 5.80,
+      "stability_score": 3.55
+    },
+    "conservative": {
+      "count": 6,
+      "average_score": 19.88,
+      "score_std_dev": 1.22,
+      "stability_score": 8.95
+    }
+  },
+  "best_by_average_score": "aggressive",
+  "recommended_by_stability": "conservative"
+}
+```
+
+CSV 는 전략별 한 줄로, 다음 컬럼을 가집니다.
+
+- `strategy`
+- `count`
+- `average_score`
+- `score_std_dev`
+- `stability_score`
+
+PNG 차트(`theme_strategy_advisor_*.png`)는
+
+- 선택한 테마에 대해  
+  `balanced` / `aggressive` / `conservative` 의 `stability_score` 를 bar chart 로 비교합니다.
+
+## 16. Heatmap Viewer
+
+여러 summary 리포트(`strategy_summary_*.json`)를 모아  
+**theme (행) × strategy (열)** 축으로 성능을 비교하는 heatmap 을 그리는 도구입니다.
+
+### 16-1. 목적
+
+- Theme Tagging / Theme Performance Analytics / Strategy Stability 정보를 바탕으로  
+  **테마별로 어떤 전략이 상대적으로 강한지**를 한눈에 볼 수 있는 시각화를 제공합니다.
+- 한 번에 여러 summary 리포트를 읽어들여,
+  - theme
+  - strategy
+  조합별로
+  - 표본 수(count)
+  - 평균 점수(average_score)
+  - 평균 stability_score
+  를 집계한 뒤, 원하는 메트릭으로 heatmap 을 생성합니다.
+
+### 16-2. 사용 방법
+
+기본 사용 예시:
+
+```bash
+python heatmap_viewer.py \
+    --summary-dir reports \
+    --metric average_score
+```
+
+옵션:
+
+- `--summary-dir`  
+  - `strategy_summary_*.json` 파일이 들어있는 디렉터리 경로
+  - 기본값: `reports`
+- `--metric`  
+  - heatmap 에 사용할 메트릭
+  - 지원 값:
+    - `average_score`     : theme × strategy 조합별 평균 점수
+    - `stability_score`   : theme × strategy 조합별 평균 stability_score
+    - `count`             : theme × strategy 조합별 총 표본 수
+  - 기본값: `average_score`
+- `--provider`  
+  - summary JSON 에 provider 메타데이터가 있을 경우 해당 provider 로 필터
+- `--session`  
+  - summary JSON 에 session 메타데이터가 있을 경우 해당 session 으로 필터
+- `--tag` (여러 번 지정 가능)  
+  - summary JSON 의 `used_filters.tags` 에 포함된 태그 기반 필터
+  - 여러 개 지정 시 AND 조건
+- `--min-samples`  
+  - theme × strategy 셀에 포함되기 위한 최소 표본 수
+  - 기본값: `3`
+
+예시 (필터 포함):
+
+```bash
+python heatmap_viewer.py \
+    --summary-dir reports \
+    --metric stability_score \
+    --provider yahoo \
+    --session premarket \
+    --min-samples 5
+```
+
+### 16-3. 데이터 집계 방식
+
+`heatmap_viewer.py` 는 각 summary JSON 의 `strategies.*.theme_performance` 를 사용합니다.
+
+- 각 summary 파일에 대해:
+  - `strategies -> strategy_name -> theme_performance -> theme` 구조에서
+    - `count`
+    - `avg_score`
+    - `stability_score`
+    값을 읽습니다.
+- 여러 summary 파일을 합칠 때:
+  - `count` 는 단순 합산
+  - `mean_average_score` 는 `avg_score` 를 `count` 로 가중 평균
+  - `mean_stability_score` 는 `stability_score` 를 `count` 로 가중 평균
+
+최종적으로 theme × strategy 조합별로 다음을 얻습니다.
+
+- `count`  
+  - 모든 summary 를 합친 총 표본 수
+- `mean_average_score`  
+  - 전체 표본에 대한 평균 점수
+- `mean_stability_score`  
+  - 전체 표본에 대한 평균 stability_score
+
+`--metric` 값에 따라 heatmap 셀 값은 다음과 같이 결정됩니다.
+
+- `count`           → `count`
+- `average_score`   → `mean_average_score`
+- `stability_score` → `mean_stability_score`
+
+`--min-samples` 보다 `count` 가 작은 조합은 heatmap 에서 제외(빈 셀)됩니다.  
+또한, 모든 전략에 대해 `min_samples` 이상을 만족하는 셀이 하나도 없는 theme 는  
+행 자체가 표시되지 않습니다.
+
+### 16-4. 출력 파일
+
+`heatmap_viewer.py` 실행 시 결과는 `reports/heatmaps/` 디렉터리에 저장됩니다.
+
+파일명:
+
+- PNG: `heatmap_<metric>.png`
+- CSV: `heatmap_<metric>.csv`
+
+특징:
+
+- PNG 파일은
+  - x축: strategy
+  - y축: theme
+  - 색: 선택한 `metric` 값
+  으로 구성된 heatmap 입니다.
+- CSV 파일은 동일한 행렬을 문자열 형태로 저장하며,
+  - 첫 열에 theme 이름
+  - 이후 열에 각 strategy 의 값
+  을 기록합니다.
+
