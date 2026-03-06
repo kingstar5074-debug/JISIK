@@ -465,3 +465,101 @@ STRATEGY_PROFILES_FILE=my_strategy_profiles.json
     - 필터 리포트(탈락 사유별 개수)
     가 정상적으로 출력되는지 확인
 
+## 12. 전략 요약 리포트 도구
+
+이 프로젝트는 `compare_strategies.py` 로 개별 시점의 전략 비교를 수행할 뿐만 아니라,  
+여러 번 실행한 비교 결과(JSON 리포트)를 기반으로 **장기간 누적 성능을 요약**할 수 있습니다.
+
+### 12-1. summarize_strategy_reports.py
+
+```bash
+python summarize_strategy_reports.py
+```
+
+동작:
+
+- `.env` 의 `REPORTS_DIR` (기본 `reports/`) 안에서
+  - `strategy_compare_*.json` 파일들을 모두 찾는다.
+- 각 JSON 리포트를 읽어
+  - `balanced`, `aggressive`, `conservative` 에 대한 통계를 누적 집계한다.
+- 콘솔에 전략별 누적 요약을 출력하고,
+  - JSON / CSV / PNG 차트로 요약 결과를 저장한다.
+
+입력 JSON 구조는 `compare_strategies.py` 가 저장한 포맷을 그대로 사용합니다.
+
+### 12-2. 누적 통계 항목
+
+전략별로 다음 항목을 집계합니다.
+
+- `number_of_runs`  
+  - 해당 전략이 포함된 유효 리포트 개수
+- `average_returned_count`  
+  - 각 리포트의 `returned_count` 평균
+- `average_passed_filters`  
+  - 각 리포트의 `passed_filters` 평균
+- `average_score_mean`  
+  - 각 리포트의 `average_score` 평균 (None 인 리포트는 제외)
+- `best_strategy_win_count`  
+  - 한 리포트에서 `average_score` 가 가장 높았던 전략으로 집계된 횟수
+- `best_strategy_win_rate`  
+  - `win_count / valid_reports * 100%`
+
+여기서 **best strategy 판단 기준**은:
+
+- 각 리포트의 `strategies.*.average_score` 중 가장 큰 값을 가진 전략 1개에만 1승 부여
+- 동점인 경우:
+  - 첫 번째 최대값만 승리로 처리하거나,  
+  - 동점 리포트를 건너뛰는 등 단순 규칙을 적용할 수 있으나,
+  - 현재 구현은 **첫 번째 최대값 하나만 승리 처리**합니다.
+
+### 12-3. 상위 종목 빈도 집계
+
+각 전략별로 `top_symbols`에 자주 등장하는 종목 빈도도 집계합니다.
+
+- 데이터 출처:
+  - 각 compare JSON 리포트의
+    - `strategies -> strategy_name -> top_symbols`
+- 결과:
+  - `summarize_strategy_reports.py` 실행 시 콘솔에
+    - 전략별 상위 빈도 종목 TOP 10 을 출력
+  - JSON 요약에도 `top_symbol_frequency` 로 포함
+
+예시:
+
+```text
+[balanced 상위 빈도 종목]
+- ABC: 7회
+- XYZ: 5회
+- LMN: 4회
+```
+
+### 12-4. 요약 결과 저장 포맷
+
+- JSON:
+  - 파일명: `strategy_summary_YYYYMMDD_HHMMSS.json`
+  - 위치: `REPORTS_DIR` (기본 `reports/`)
+  - 내용:
+    - `total_reports`, `valid_reports`, `skipped_reports`
+    - `strategies`(각 전략별 누적 통계)
+    - `most_frequent_winner`(가장 승리가 많았던 전략 및 비율)
+    - `top_symbol_frequency`(전략별 상위 빈도 종목)
+- CSV:
+  - 파일명: `strategy_summary_YYYYMMDD_HHMMSS.csv`
+  - 위치: `REPORTS_DIR`
+  - 행 단위(전략별 1행):
+    - `strategy`
+    - `number_of_runs`
+    - `average_returned_count`
+    - `average_passed_filters`
+    - `average_score_mean`
+    - `best_strategy_win_count`
+    - `best_strategy_win_rate`
+- PNG 차트:
+  1. `strategy_summary_avg_score_YYYYMMDD_HHMMSS.png`
+     - 전략별 `average_score_mean` bar chart
+  2. `strategy_summary_win_rate_YYYYMMDD_HHMMSS.png`
+     - 전략별 `best_strategy_win_rate` bar chart
+
+모든 출력은 `.env` 의 `REPORTS_DIR` 아래에 저장되며,  
+저장에 실패해도 콘솔 요약 출력은 유지됩니다.
+
