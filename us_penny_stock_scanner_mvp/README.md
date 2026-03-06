@@ -2002,45 +2002,38 @@ python watchlist_suitability_cleaner.py --strategy-profile test --clean
 ## 30. Polygon Smart Universe Builder
 
 watchlist 가 너무 작아서 스캐너가 자주 0개 결과를 반환하는 문제를 완화하기 위해,  
-**Polygon US 주식 전체 스냅샷**을 이용해 더 큰 유니버스를 생성하는 도구입니다.
+**Massive v3 reference tickers API** 로 US 주식 유니버스를 생성하는 도구입니다.
 
-이 도구는 **watchlist 모드를 대체하지 않고**, universe 모드에서 사용할  
-`universe/generated_universe.txt` 파일을 만드는 역할을 합니다.
+- **레거시 snapshot 엔드포인트를 사용하지 않습니다.**  
+  `smart_universe_builder.py` 는 **Massive v3 reference tickers** (`https://api.massive.com/v3/reference/tickers`) 만 호출하며,  
+  이전에 사용하던 `/v2/snapshot/locale/us/markets/stocks/tickers` 경로에는 의존하지 않습니다.
+- 이 도구는 **watchlist 모드를 대체하지 않고**, universe 모드에서 사용할  
+  `universe/generated_universe.txt` 파일을 만드는 역할을 합니다.
 
 ### 30-1. 전제 조건
 
-- `.env` 또는 환경변수에 **Polygon API 키**가 설정되어 있어야 합니다.
+- `.env` 또는 환경변수에 **POLYGON_API_KEY** 가 설정되어 있어야 합니다 (Massive v3 호출에 동일 키 사용).
 
 ```ini
 POLYGON_API_KEY=pk_xxxxxxxxxxxxxxxxx
 ```
 
-- `DATA_PROVIDER=polygon` 으로 설정되어 있어야 Polygon 기반 유니버스 생성을 사용할 수 있습니다.
+- `DATA_PROVIDER=polygon` 설정은 스캐너 실행 시에만 필요하며, 유니버스 빌더 자체는 API 키만 있으면 동작합니다.
 
-### 30-2. 필터링/유니버스 규칙
+### 30-2. 데이터 소스 및 필터링
 
-`smart_universe_builder.py` 는 내부적으로 `universe/polygon_universe_builder.py` 를 재사용하여,  
-다음 기준으로 후보를 필터링합니다.
-
-1. 가격 필터
-   - `UNIVERSE_PRICE_MIN` (기본 0.05)
-   - `UNIVERSE_PRICE_MAX` (기본 10.0)
-   - CLI 로 `--price-min`, `--price-max` 로 재정의 가능
-2. 가격 + 전일 종가 + dollar volume 1차 필터 (snapshot 기반)
-   - price 범위 안에 있는 종목만 선택
-   - `prev_close >= UNIVERSE_MIN_PREV_CLOSE` (기존 config 값 사용)
-   - `dollar_volume = price * current_volume >= UNIVERSE_MIN_DOLLAR_VOLUME`
-3. 평균 거래량 필터 (aggregates 기반)
-   - 후보에 대해서만 Polygon aggregates API 로 최근 평균 거래량 계산
-   - `average_volume >= UNIVERSE_MIN_VOLUME` (기본 50000, CLI `--min-volume` 로 재정의)
-4. 타입/메타데이터 기반 필터
-   - 심볼 패턴(`.W`, `.U`, `.PR*` 등)과 Polygon 메타데이터(`type`, `name`)를 사용해  
-     다음 유형을 최대한 제거:
-     - warrants, rights, units
-     - preferred shares
-     - ETF / ETN / ETP / mutual fund / trust 등
-5. 최종 limit
-   - `UNIVERSE_MAX_SYMBOLS` (기본 1000, CLI `--max-symbols` 로 재정의) 개까지만 남김
+- **데이터 소스**: `https://api.massive.com/v3/reference/tickers` (cursor 기반 페이지네이션).
+- **메타데이터 필터** (유지 조건):
+  - `active == true`
+  - `market == "stocks"`
+  - `locale == "us"`
+  - `type == "CS"` 등 common stock 유형 선호; 제외 타입은 아래와 같음.
+- **제외**: ETF, ETN, ETP, fund, trust, warrant, rights, units, preferred 등은  
+  `type` / `name` 메타데이터로 식별 가능한 경우 제외합니다.
+- **현재 모드**: `reference_only`.  
+  가격/거래량 등 live enrichment 는 레거시 snapshot 의존을 피하기 위해 이 버전에서 **생략**됩니다.  
+  필요 시 추후 snapshot 없이 안전한 엔드포인트만 사용해 보강할 수 있습니다.
+- **최대 심볼 수**: `UNIVERSE_MAX_SYMBOLS` (기본 1000) 또는 `--max-symbols` 로 제한.
 
 ### 30-3. 출력 파일
 
@@ -2057,14 +2050,12 @@ POLYGON_API_KEY=pk_xxxxxxxxxxxxxxxxx
 ```json
 {
   "generated_at": "...",
-  "provider": "polygon",
-  "price_min": 0.05,
-  "price_max": 10.0,
-  "min_volume": 50000,
-  "min_dollar_volume": 100000,
+  "provider": "massive_v3",
+  "api_base": "https://api.massive.com",
+  "mode": "reference_only",
+  "total_seen": 5000,
+  "total_kept": 800,
   "max_symbols": 1000,
-  "total_candidates_seen": 5342,
-  "total_selected": 782,
   "output_file": "universe/generated_universe.txt"
 }
 ```
@@ -2077,13 +2068,13 @@ POLYGON_API_KEY=pk_xxxxxxxxxxxxxxxxx
 python smart_universe_builder.py
 ```
 
-가격 상한/심볼 수를 조정:
+심볼 수 제한:
 
 ```bash
-python smart_universe_builder.py --price-max 5 --max-symbols 500
+python smart_universe_builder.py --max-symbols 500
 ```
 
-자세한 진행 상황 출력:
+자세한 진행 상황 출력 (Massive v3 사용 여부 확인 가능):
 
 ```bash
 python smart_universe_builder.py --verbose
@@ -2092,10 +2083,12 @@ python smart_universe_builder.py --verbose
 `--verbose` 사용 시 예시 출력:
 
 ```text
-Loading Polygon market data...
-Filters: price 0.05~10.00, avg_volume>=50000, dollar_volume>=100000, max_symbols=1000
-Seen candidates: 5342
-Selected symbols: 782
+Using Massive v3 reference endpoint
+Base URL: https://api.massive.com
+Fetching reference tickers...
+Page 1 fetched
+Page 2 fetched
+Metadata-kept symbols: 842
 Saved: universe/generated_universe.txt
 Saved report: reports/universe/universe_build_report.json
 ```
