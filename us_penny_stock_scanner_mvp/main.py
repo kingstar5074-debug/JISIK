@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import argparse
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
 from rich.console import Console
 
 from config import load_config
@@ -15,7 +20,64 @@ from utils.logger import get_logger
 log = get_logger(__name__)
 
 
+def _format_debug_line(entry: dict) -> str:
+    """종목별 필터 디버그 한 줄 포맷 (예: ABCD -> failed_price (price=2.14, allowed=0.05~1.0))"""
+    sym = entry.get("symbol", "")
+    status = entry.get("status", "")
+    details = entry.get("details") or {}
+    if status == "passed":
+        score = details.get("score")
+        if score is not None:
+            return f"- {sym} -> passed (score={score:.1f})"
+        return f"- {sym} -> passed"
+    if status == "missing_data":
+        return f"- {sym} -> missing_data"
+    if status == "failed_price":
+        p = details.get("price")
+        lo = details.get("allowed_min")
+        hi = details.get("allowed_max")
+        return f"- {sym} -> failed_price (price={p}, allowed={lo}~{hi})"
+    if status == "failed_change":
+        c = details.get("change")
+        m = details.get("min_required")
+        return f"- {sym} -> failed_change (change={c}, min={m})"
+    if status == "failed_gap":
+        g = details.get("gap_percent")
+        m = details.get("min_required")
+        return f"- {sym} -> failed_gap (gap={g}, min={m})"
+    if status == "failed_intraday":
+        i = details.get("intraday_change_percent")
+        m = details.get("min_required")
+        return f"- {sym} -> failed_intraday (intraday={i}, min={m})"
+    if status == "failed_volume_ratio":
+        v = details.get("volume_ratio")
+        m = details.get("min_required")
+        return f"- {sym} -> failed_volume_ratio (volume_ratio={v}, min={m})"
+    if status == "failed_avg_volume":
+        a = details.get("average_volume")
+        m = details.get("min_required")
+        return f"- {sym} -> failed_avg_volume (avg_vol={a}, min={m})"
+    if status == "failed_dollar_volume":
+        d = details.get("dollar_volume")
+        m = details.get("min_required")
+        return f"- {sym} -> failed_dollar_volume (dollar_vol={d}, min={m})"
+    return f"- {sym} -> {status}"
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description="US Penny Stock Scanner MVP")
+    parser.add_argument(
+        "--debug-filters",
+        action="store_true",
+        help="Print per-symbol filter debug output (why each symbol passed or failed).",
+    )
+    parser.add_argument(
+        "--debug-filter-json",
+        action="store_true",
+        help="Save per-symbol filter outcomes to reports/filter_debug/filter_debug_<timestamp>.json",
+    )
+    args = parser.parse_args()
+
     cfg = load_config()
     console = Console()
 
@@ -52,6 +114,9 @@ def main() -> int:
     clock = MarketClock()
     session = clock.current_session()
 
+    # 유효 필터: config 기본값 + 전략 프로파일 오버레이 (필터링/로그 동일 값 사용)
+    effective_filters = get_effective_filters(cfg.filters, session, profile)
+
     console.print(f"현재 시장 세션(ET): {session}")
     console.print(f"현재 스캔 모드: {cfg.scan_mode}")
     console.print(f"현재 데이터 provider: {cfg.data_provider}")
@@ -59,7 +124,7 @@ def main() -> int:
     console.print(f"전략 프로파일 파일: {cfg.strategy_profiles_file.name}")
     console.print(f"로드한 티커 수: {len(tickers)}")
     console.print(
-        "필터(기본값): "
+        "기본 config 필터: "
         f"price {cfg.filters.min_price}~{cfg.filters.max_price} / "
         f"change >= {cfg.filters.min_change_percent} / "
         f"gap >= {cfg.filters.min_gap_percent} / "
@@ -68,11 +133,9 @@ def main() -> int:
         f"avg_volume >= {cfg.filters.min_average_volume} / "
         f"dollar_volume >= {cfg.filters.min_dollar_volume}"
     )
-
-    # 현재 세션 기준 유효 필터 (전략 프로파일 오버라이드 적용 후)
-    effective_filters = get_effective_filters(cfg.filters, session, profile)
     console.print(
-        "세션 유효 필터: "
+        "전략 적용 후 유효 필터: "
+        f"price {effective_filters.min_price}~{effective_filters.max_price} / "
         f"change >= {effective_filters.min_change_percent} / "
         f"gap >= {effective_filters.min_gap_percent} / "
         f"intraday >= {effective_filters.min_intraday_change_percent} / "
@@ -95,7 +158,7 @@ def main() -> int:
         top_results=cfg.top_results,
     )
 
-    result = scanner.scan(tickers)
+    result = scanner.scan(tickers, debug_filters=args.debug_filters or args.debug_filter_json)
 
     render_console_tables(result.matched, scores=result.scores, console=console)
 
@@ -118,6 +181,46 @@ def main() -> int:
     console.print(f"- 최종 필터 통과: {fr.passed_filters}")
     console.print(f"- 점수화 완료: {fr.scored_count}")
     console.print(f"- 최종 출력: {fr.returned_count}")
+
+    if args.debug_filters and result.per_symbol_filter_results:
+        console.print("Per-symbol filter results:")
+        for entry in result.per_symbol_filter_results:
+            console.print(_format_debug_line(entry))
+
+    if args.debug_filter_json and result.per_symbol_filter_results is not None:
+        out_dir = cfg.reports_dir / "filter_debug"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        out_path = out_dir / f"filter_debug_{ts}.json"
+        eff = result.effective_filters_snapshot
+        payload = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "strategy_profile": profile.name,
+            "effective_filters": (
+                {
+                    "price_min": eff.min_price,
+                    "price_max": eff.max_price,
+                    "change_min": eff.min_change_percent,
+                    "gap_min": eff.min_gap_percent,
+                    "intraday_min": eff.min_intraday_change_percent,
+                    "volume_ratio_min": eff.min_volume_ratio,
+                    "avg_volume_min": eff.min_average_volume,
+                    "dollar_volume_min": eff.min_dollar_volume,
+                }
+                if eff
+                else {}
+            ),
+            "results": [
+                {
+                    "symbol": e["symbol"],
+                    "status": e["status"],
+                    "details": e.get("details") or {},
+                }
+                for e in result.per_symbol_filter_results
+            ],
+        }
+        out_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        console.print(f"Filter debug JSON saved: {out_path}")
 
     return 0
 

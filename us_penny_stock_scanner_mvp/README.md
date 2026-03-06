@@ -383,6 +383,15 @@ UNIVERSE_FILE=generated_universe_candidates.txt
 python main.py
 ```
 
+- **디버그 옵션**
+  - `--debug-filters`: 종목별 필터 통과/탈락 사유를 콘솔에 출력 (예: `ABCD -> failed_price (price=2.14, allowed=0.05~1.0)`).
+  - `--debug-filter-json`: 종목별 필터 결과를 `reports/filter_debug/filter_debug_<timestamp>.json` 에 저장 (유효 필터 값 + symbol/status/details).
+
+```bash
+python main.py --debug-filters
+python main.py --debug-filter-json
+```
+
 - **watchlist 모드**
   - `.env`에서 `SCAN_MODE=watchlist` (또는 기본값 유지)
   - `tickers.txt`에 있는 티커만 스캔
@@ -478,6 +487,7 @@ python main.py
 - `*_weights`
   - `momentum_weight`, `volume_weight`, `gap_weight`, `liquidity_weight` 4개 필수
 - `*_thresholds`
+  - `min_price`, `max_price` (프로파일에서 지정 시 config 의 `MIN_PRICE`/`MAX_PRICE` 를 오버라이드)
   - `min_change_percent`
   - `min_gap_percent`
   - `min_intraday_change_percent`
@@ -485,6 +495,7 @@ python main.py
   - `min_average_volume`
   - `min_dollar_volume`
   - 필요 없는 값은 생략하거나 `null` 로 두면 `.env` 의 `MIN_*` 값을 사용
+- **전략 프로파일 값은 config 기본값을 오버라이드**: 프로파일의 `*_thresholds` 에 위 필드들을 지정하면, 해당 세션에서 **실제 필터링에 사용되는 유효 필터**는 모두 프로파일 값으로 적용됩니다. 즉 `price_min`/`price_max` 를 프로파일에서 지정하면 config 의 0.05~1.0 이 아닌 프로파일 범위(예: 0.05~5.0)가 적용됩니다.
 
 ### 7-2. STRATEGY_PROFILES_FILE 설정
 

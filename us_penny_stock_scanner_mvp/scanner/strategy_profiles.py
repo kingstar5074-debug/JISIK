@@ -26,6 +26,8 @@ class SessionThresholds:
     - 값이 있으면 해당 세션에서 그 값을 사용
     """
 
+    min_price: Optional[float] = None
+    max_price: Optional[float] = None
     min_change_percent: Optional[float] = None
     min_gap_percent: Optional[float] = None
     min_intraday_change_percent: Optional[float] = None
@@ -118,7 +120,38 @@ def _parse_weights(data: dict, key_path: str) -> StrategyWeights:
 def _parse_thresholds(data: Optional[dict], key_prefix: str) -> SessionThresholds:
     if not isinstance(data, dict):
         return SessionThresholds()
+    min_price = data.get("min_price")
+    max_price = data.get("max_price")
+    if min_price is not None:
+        try:
+            min_price = float(min_price)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"전략 프로파일 파일의 '{key_prefix}.min_price' 값이 숫자가 아닙니다."
+            )
+        if min_price < 0:
+            raise ValueError(
+                f"전략 프로파일 파일의 '{key_prefix}.min_price' 값은 0 이상이어야 합니다."
+            )
+    if max_price is not None:
+        try:
+            max_price = float(max_price)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"전략 프로파일 파일의 '{key_prefix}.max_price' 값이 숫자가 아닙니다."
+            )
+        if max_price < 0:
+            raise ValueError(
+                f"전략 프로파일 파일의 '{key_prefix}.max_price' 값은 0 이상이어야 합니다."
+            )
+    if min_price is not None and max_price is not None and min_price > max_price:
+        raise ValueError(
+            f"전략 프로파일 파일의 '{key_prefix}' 에서 min_price가 max_price보다 클 수 없습니다."
+        )
+
     t = SessionThresholds(
+        min_price=min_price,
+        max_price=max_price,
         min_change_percent=data.get("min_change_percent"),
         min_gap_percent=data.get("min_gap_percent"),
         min_intraday_change_percent=data.get("min_intraday_change_percent"),
@@ -272,8 +305,8 @@ def get_effective_filters(
         return base if override is None else override
 
     return ScanFilters(
-        min_price=base_filters.min_price,
-        max_price=base_filters.max_price,
+        min_price=v(base_filters.min_price, t.min_price),
+        max_price=v(base_filters.max_price, t.max_price),
         min_change_percent=v(base_filters.min_change_percent, t.min_change_percent),
         min_volume_ratio=v(base_filters.min_volume_ratio, t.min_volume_ratio),
         min_gap_percent=v(base_filters.min_gap_percent, t.min_gap_percent),
