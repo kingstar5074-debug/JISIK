@@ -1837,3 +1837,305 @@ python watchlist_validator.py --clean
 ```
 
 기본 provider 는 `yahoo` 이며, `--provider` 옵션으로 다른 provider 이름을 지정할 수 있습니다.
+
+## 29. Watchlist Suitability Cleaner
+
+현재 watchlist(`tickers.txt`)에 포함된 심볼들이 **현재 전략/필터 관점에서 구조적으로 적합한지**를 평가하고,  
+선택적으로 **명백히 부적합한 심볼만 정리(clean)** 하는 도구입니다.
+
+중요:
+
+- 이 스크립트는 **시장 전체를 검색하거나(universe search) 새로운 종목을 찾지 않습니다.**
+- 오직 현재 watchlist 에 들어 있는 심볼만 대상으로 평가합니다.
+
+### 29-1. 목적
+
+- 현재 watchlist 가
+  - 가격 범위(예: 0.05 ~ 5.0) 밖에 있거나
+  - 항상 필터에 막히는 구조적인 심볼들로 인해
+  - 스캐너 결과가 0개 또는 매우 적게 나오는 상황을 개선
+- **전략 프로파일의 유효 필터(effective filters)** 와
+  **실제 시세(quote)** 를 기반으로 심볼 적합성을 분류
+
+### 29-2. 동작
+
+- `universe/watchlist_universe.py` 로 `tickers.txt` 에서 심볼 로드
+- `config.load_config()` 를 사용해
+  - 현재 `STRATEGY_PROFILE`
+  - `STRATEGY_PROFILES_FILE`
+  - 기본 필터(`MIN_*`)
+  - `REPORTS_DIR`
+  를 로드
+- `scanner.strategy_profiles.get_strategy_profile` / `get_effective_filters` 로
+  - 현재 세션(pre/regular/afterhours/closed) 기준 **유효 필터** 계산
+- `scanner.providers.factory.get_market_data_provider` 로 provider(yahoo 등) 생성
+- `provider.fetch_quotes(symbols, market_session=<현재 세션>)` 으로 시세 조회
+- 각 심볼에 대해 다음 기준으로 분류:
+  1. `unsuitable_missing_data`  
+     - quote 가 없거나 price/change/intraday 값이 None
+  2. `unsuitable_price_too_high`  
+     - `current_price > price_max`
+  3. `unsuitable_price_too_low`  
+     - `current_price < price_min`
+  4. `unsuitable_negative_change`  
+     - `percent_change < 0` (전략이 양의 모멘텀을 기대하는 경우 비적합)
+  5. `unsuitable_change_below_threshold`  
+     - `percent_change < change_min` (음수가 아닌데 전략 기대치보다 낮은 경우)
+  6. `unsuitable_intraday`  
+     - `intraday_change_percent < intraday_min`
+  7. `suitable`  
+     - 위 조건을 모두 통과한 심볼
+
+각 결과에는 간단한 reason(예: `"price above allowed maximum"`) 과  
+관련 값/임계값이 `details` 에 포함됩니다.
+
+### 29-3. 콘솔 출력 예시
+
+```text
+Evaluating 6 symbol(s) with provider=yahoo, strategy_profile=test, session=regular...
+
+총 심볼 수: 6
+Suitable: 0
+Unsuitable: 6
+
+Unsuitable details:
+- BATL -> unsuitable_price_too_high (price=21.59 > max=5.0)
+- BHAT -> unsuitable_price_too_low (price=0.0329 < min=0.05)
+- CENN -> unsuitable_change_below_threshold (change=-4.39 < min=5.0)
+- TPET -> unsuitable_intraday (intraday=-6.67 < min=3.0)
+```
+
+`--verbose` 옵션을 사용하면 **suitable 포함 전 심볼**에 대한 상세 결과를 모두 출력합니다.
+
+### 29-4. JSON 리포트
+
+결과는 항상 다음 경로에 JSON 으로 저장됩니다.
+
+- `reports/watchlist_suitability/watchlist_suitability_report.json`
+
+구조 예:
+
+```json
+{
+  "generated_at": "...",
+  "provider": "yahoo",
+  "strategy_profile": "test",
+  "effective_filters": {
+    "price_min": 0.05,
+    "price_max": 5.0,
+    "change_min": 5.0,
+    "gap_min": 0.0,
+    "intraday_min": 3.0,
+    "volume_ratio_min": 1.5,
+    "avg_volume_min": 50000,
+    "dollar_volume_min": 100000
+  },
+  "summary": {
+    "total": 6,
+    "suitable": 0,
+    "unsuitable": 6
+  },
+  "results": [
+    {
+      "symbol": "BATL",
+      "status": "unsuitable_price_too_high",
+      "reason": "price above allowed maximum",
+      "details": {
+        "price": 21.5982,
+        "price_max": 5.0
+      }
+    }
+  ]
+}
+```
+
+### 29-5. Clean 모드 (선택 사항)
+
+`--clean` 옵션을 사용하면, **명백히 구조적으로 부적합한 심볼만** watchlist 에서 제거합니다.
+
+- 자동 제거 대상 status:
+  - `unsuitable_price_too_high`
+  - `unsuitable_price_too_low`
+  - `unsuitable_missing_data`
+- 자동 제거하지 않는 status:
+  - `unsuitable_change_below_threshold`
+  - `unsuitable_intraday`
+  - `unsuitable_negative_change`
+
+이유:
+
+- 가격 범위 밖이거나 데이터가 없는 심볼은 **구조적으로 전략과 맞지 않거나 문제가 있는 심볼**인 경우가 많음
+- change / intraday 관련 조건은 **당일 시장 상태**에 따라 바뀔 수 있으므로,
+  전략에 따라 다시 상승 후보가 될 수 있어 자동 제거하지 않음
+
+### 29-6. 백업 생성
+
+`--clean` 사용 시, 항상 현재 watchlist 를 백업한 뒤에만 파일을 수정합니다.
+
+- 백업 파일 이름:  
+  - `watchlist_suitability_backup_<timestamp>.txt`  
+  - `<timestamp>` 예: `20260306_140530`
+- 위치: 프로젝트 루트 (`us_penny_stock_scanner_mvp/`)
+
+백업 생성에 실패하면 watchlist 수정은 수행되지 않습니다.
+
+### 29-7. 사용 방법
+
+```bash
+# 기본 적합성 평가 (요약 + JSON 리포트)
+python watchlist_suitability_cleaner.py
+
+# 상세 per-symbol 결과 출력
+python watchlist_suitability_cleaner.py --verbose
+
+# 구조적으로 부적합한 심볼 자동 제거 (백업 생성)
+python watchlist_suitability_cleaner.py --clean
+
+# 특정 전략 프로파일로 평가 + clean
+python watchlist_suitability_cleaner.py --strategy-profile test --clean
+```
+
+추가 옵션:
+
+- `--provider` : 기본값 `yahoo` (현재 watchlist 에 대해서만 평가, 새로운 심볼 검색 없음)
+
+## 30. Polygon Smart Universe Builder
+
+watchlist 가 너무 작아서 스캐너가 자주 0개 결과를 반환하는 문제를 완화하기 위해,  
+**Polygon US 주식 전체 스냅샷**을 이용해 더 큰 유니버스를 생성하는 도구입니다.
+
+이 도구는 **watchlist 모드를 대체하지 않고**, universe 모드에서 사용할  
+`universe/generated_universe.txt` 파일을 만드는 역할을 합니다.
+
+### 30-1. 전제 조건
+
+- `.env` 또는 환경변수에 **Polygon API 키**가 설정되어 있어야 합니다.
+
+```ini
+POLYGON_API_KEY=pk_xxxxxxxxxxxxxxxxx
+```
+
+- `DATA_PROVIDER=polygon` 으로 설정되어 있어야 Polygon 기반 유니버스 생성을 사용할 수 있습니다.
+
+### 30-2. 필터링/유니버스 규칙
+
+`smart_universe_builder.py` 는 내부적으로 `universe/polygon_universe_builder.py` 를 재사용하여,  
+다음 기준으로 후보를 필터링합니다.
+
+1. 가격 필터
+   - `UNIVERSE_PRICE_MIN` (기본 0.05)
+   - `UNIVERSE_PRICE_MAX` (기본 10.0)
+   - CLI 로 `--price-min`, `--price-max` 로 재정의 가능
+2. 가격 + 전일 종가 + dollar volume 1차 필터 (snapshot 기반)
+   - price 범위 안에 있는 종목만 선택
+   - `prev_close >= UNIVERSE_MIN_PREV_CLOSE` (기존 config 값 사용)
+   - `dollar_volume = price * current_volume >= UNIVERSE_MIN_DOLLAR_VOLUME`
+3. 평균 거래량 필터 (aggregates 기반)
+   - 후보에 대해서만 Polygon aggregates API 로 최근 평균 거래량 계산
+   - `average_volume >= UNIVERSE_MIN_VOLUME` (기본 50000, CLI `--min-volume` 로 재정의)
+4. 타입/메타데이터 기반 필터
+   - 심볼 패턴(`.W`, `.U`, `.PR*` 등)과 Polygon 메타데이터(`type`, `name`)를 사용해  
+     다음 유형을 최대한 제거:
+     - warrants, rights, units
+     - preferred shares
+     - ETF / ETN / ETP / mutual fund / trust 등
+5. 최종 limit
+   - `UNIVERSE_MAX_SYMBOLS` (기본 1000, CLI `--max-symbols` 로 재정의) 개까지만 남김
+
+### 30-3. 출력 파일
+
+유니버스 심볼 목록:
+
+- `universe/generated_universe.txt`
+- 한 줄에 심볼 하나, 대문자/정규화/중복 제거 후 정렬된 형태로 저장됩니다.
+
+빌드 리포트(JSON):
+
+- `reports/universe/universe_build_report.json`
+- 예시:
+
+```json
+{
+  "generated_at": "...",
+  "provider": "polygon",
+  "price_min": 0.05,
+  "price_max": 10.0,
+  "min_volume": 50000,
+  "min_dollar_volume": 100000,
+  "max_symbols": 1000,
+  "total_candidates_seen": 5342,
+  "total_selected": 782,
+  "output_file": "universe/generated_universe.txt"
+}
+```
+
+### 30-4. 사용 방법
+
+기본 실행:
+
+```bash
+python smart_universe_builder.py
+```
+
+가격 상한/심볼 수를 조정:
+
+```bash
+python smart_universe_builder.py --price-max 5 --max-symbols 500
+```
+
+자세한 진행 상황 출력:
+
+```bash
+python smart_universe_builder.py --verbose
+```
+
+`--verbose` 사용 시 예시 출력:
+
+```text
+Loading Polygon market data...
+Filters: price 0.05~10.00, avg_volume>=50000, dollar_volume>=100000, max_symbols=1000
+Seen candidates: 5342
+Selected symbols: 782
+Saved: universe/generated_universe.txt
+Saved report: reports/universe/universe_build_report.json
+```
+
+### 30-5. 스캐너 universe 모드와의 연동
+
+1. 먼저 유니버스를 생성합니다.
+
+```bash
+python smart_universe_builder.py
+```
+
+2. `.env` 에서 스캐너를 **universe 모드**로 설정하고, 생성된 파일을 사용하도록 지정합니다.
+
+```ini
+SCAN_MODE=universe
+UNIVERSE_FILE=universe/generated_universe.txt
+DATA_PROVIDER=yahoo  # 또는 polygon
+```
+
+3. 스캐너를 실행합니다.
+
+```bash
+python main.py
+```
+
+이렇게 하면 `universe/generated_universe.txt` 에 있는 큰 유니버스를 기반으로  
+기존 전략/필터/전략 프로파일을 그대로 사용해 스캔을 수행합니다.
+
+### 30-6. main.py 의 --build-universe 편의 옵션
+
+universe 모드에서 스캔 직전에 자동으로 스마트 유니버스를 다시 생성하고 싶다면:
+
+```bash
+python main.py --build-universe
+```
+
+- `SCAN_MODE=universe` 인 경우에만 동작하며,
+  - 내부적으로 `smart_universe_builder.py` 를 먼저 실행한 뒤
+  - 성공하면 바로 이어서 스캔을 수행합니다.
+- watchlist 모드(`SCAN_MODE=watchlist`) 에서는 `--build-universe` 옵션이 무시됩니다.
+
+

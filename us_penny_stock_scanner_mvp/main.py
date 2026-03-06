@@ -76,6 +76,14 @@ def main() -> int:
         action="store_true",
         help="Save per-symbol filter outcomes to reports/filter_debug/filter_debug_<timestamp>.json",
     )
+    parser.add_argument(
+        "--build-universe",
+        action="store_true",
+        help=(
+            "When SCAN_MODE=universe, run Polygon smart universe builder first "
+            "before scanning."
+        ),
+    )
     args = parser.parse_args()
 
     cfg = load_config()
@@ -94,6 +102,21 @@ def main() -> int:
     except ValueError as e:
         console.print(str(e))
         return 1
+
+    # SCAN_MODE=universe 이고 --build-universe 가 지정된 경우,
+    # Polygon 기반 스마트 유니버스를 먼저 생성한다.
+    if args.build_universe and cfg.scan_mode == "universe":
+        console.print("SCAN_MODE=universe 이므로 Polygon 스마트 유니버스를 먼저 생성합니다.")
+        try:
+            from smart_universe_builder import main as smart_universe_main
+        except Exception as e:  # pragma: no cover - 방어적
+            console.print(f"스마트 유니버스 빌더를 로드하지 못했습니다: {e}")
+            return 1
+
+        ret = smart_universe_main()
+        if ret != 0:
+            console.print("스마트 유니버스 생성에 실패했습니다. 스캔을 중단합니다.")
+            return ret
 
     # Select symbol universe based on scan mode.
     if cfg.scan_mode == "universe":
