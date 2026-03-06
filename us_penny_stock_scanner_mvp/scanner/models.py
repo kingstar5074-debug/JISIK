@@ -3,18 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Optional
 
+
 MarketSession = Literal["premarket", "regular", "afterhours", "closed"]
 
 
 @dataclass(frozen=True)
 class QuoteSnapshot:
     """
-    Minimal quote snapshot used by the scanner.
+    Provider-agnostic quote snapshot used by the scanner.
 
-    Notes:
-    - Provider-agnostic 구조를 유지해 Polygon / Yahoo 등 어떤 provider든
-      이 모델만 맞춰주면 스캐너가 동작하도록 설계한다.
-    - 일부 필드는 provider가 값을 줄 수 없으면 None 일 수 있다.
+    - Providers는 가능한 한 모든 필드를 채우되, 값이 없으면 None 을 넣는다.
+    - 필터 단계에서 None 인 값은 자동으로 탈락 처리된다.
     """
 
     symbol: str
@@ -25,31 +24,8 @@ class QuoteSnapshot:
     current_volume: Optional[float]
     average_volume: Optional[float]
     volume_ratio: Optional[float]
-    market_session: MarketSession
-
-from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Literal, Optional
-
-MarketSession = Literal["premarket", "regular", "afterhours", "closed"]
-
-
-@dataclass(frozen=True)
-class QuoteSnapshot:
-    """
-    Minimal quote snapshot needed for the MVP.
-
-    Notes:
-    - We intentionally keep the model provider-agnostic so we can swap data providers later.
-    - Some fields can be None if the provider does not supply them; the scanner skips invalid rows.
-    """
-
-    symbol: str
-    current_price: Optional[float]
-    percent_change: Optional[float]
-    current_volume: Optional[float]
-    average_volume: Optional[float]
-    volume_ratio: Optional[float]
+    prev_close: Optional[float]
+    today_open: Optional[float]
+    dollar_volume: Optional[float]
     market_session: MarketSession
 

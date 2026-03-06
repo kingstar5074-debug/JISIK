@@ -15,6 +15,14 @@ def main() -> int:
 
     console.print("유니버스 생성 시작")
     console.print(f"데이터 provider: {cfg.data_provider}")
+    console.print(
+        f"가격 범위: {cfg.universe_min_price:.2f} ~ {cfg.universe_max_price:.2f}"
+    )
+    console.print(
+        "유동성 기준: "
+        f"avg_volume >= {cfg.universe_min_average_volume:.0f} / "
+        f"dollar_volume >= {cfg.universe_min_dollar_volume:.0f}"
+    )
 
     try:
         result = build_universe(cfg)
@@ -26,10 +34,9 @@ def main() -> int:
         console.print(f"유니버스 생성 중 오류가 발생했습니다: {e}")
         return 1
 
-    console.print(
-        f"가격 범위: {cfg.universe_min_price:.2f} ~ {cfg.universe_max_price:.2f}"
-    )
-    console.print(f"수집 후보 수: {result.total_candidates}")
+    console.print(f"전체 후보 수: {result.total_candidates}")
+    console.print(f"가격 필터 통과: {result.price_filtered}")
+    console.print(f"유동성 필터 통과: {result.liquidity_filtered}")
     console.print(f"최종 저장 종목 수: {result.saved_symbols}")
     console.print(f"출력 파일: {result.output_file}")
 

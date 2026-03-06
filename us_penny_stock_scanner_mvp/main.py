@@ -48,22 +48,32 @@ def main() -> int:
     console.print(f"현재 데이터 provider: {cfg.data_provider}")
     console.print(f"로드한 티커 수: {len(tickers)}")
     console.print(
-        f"필터: price {cfg.filters.min_price}~{cfg.filters.max_price} / "
+        "필터: "
+        f"price {cfg.filters.min_price}~{cfg.filters.max_price} / "
         f"change >= {cfg.filters.min_change_percent} / "
-        f"volume_ratio >= {cfg.filters.min_volume_ratio}"
+        f"gap >= {cfg.filters.min_gap_percent} / "
+        f"intraday >= {cfg.filters.min_intraday_change_percent} / "
+        f"volume_ratio >= {cfg.filters.min_volume_ratio} / "
+        f"avg_volume >= {cfg.filters.min_average_volume} / "
+        f"dollar_volume >= {cfg.filters.min_dollar_volume}"
     )
 
     try:
         provider = get_market_data_provider(cfg)
-    except RuntimeError as e:
+    except (RuntimeError, ValueError) as e:
         console.print(str(e))
         return 1
 
-    scanner = PennyStockScanner(provider=provider, filters=cfg.filters, clock=clock)
+    scanner = PennyStockScanner(
+        provider=provider,
+        filters=cfg.filters,
+        clock=clock,
+        top_results=cfg.top_results,
+    )
 
     result = scanner.scan(tickers)
 
-    render_console_tables(result.matched, console=console)
+    render_console_tables(result.matched, scores=result.scores, console=console)
 
     console.print(f"조회 성공: {result.fetch_success}")
     console.print(f"조회 실패: {result.fetch_failed}")
