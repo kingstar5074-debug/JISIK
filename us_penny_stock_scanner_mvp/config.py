@@ -15,9 +15,13 @@ class AppConfig:
     universe_file: Path
     universe_output_file: Path
 
-    # 모드 & 데이터 공급자
+    # 캐시 디렉터리
+    cache_dir: Path
+
+    # 모드 & 데이터 공급자 & 전략 프로파일
     scan_mode: str
     data_provider: str
+    strategy_profile: str
     polygon_api_key: Optional[str]
 
     # 유니버스 생성용 설정 (거친 1차 필터)
@@ -27,6 +31,10 @@ class AppConfig:
     universe_min_average_volume: float
     universe_min_prev_close: float
     universe_limit: int
+
+    # 캐시 TTL (시간 단위)
+    avg_volume_cache_ttl_hours: int
+    symbol_meta_cache_ttl_hours: int
 
     # 스캐너 필터 (정교한 2차 필터)
     filters: ScanFilters
@@ -84,12 +92,18 @@ def load_config() -> AppConfig:
     )
     universe_output_file = project_root / universe_output_name
 
-    # 모드 / provider
+    cache_dir_name = _get_env_str("CACHE_DIR", "cache")
+    cache_dir = project_root / cache_dir_name
+
+    # 모드 / provider / 전략 프로파일
     raw_mode = _get_env_str("SCAN_MODE", "watchlist")
     scan_mode = (raw_mode or "watchlist").strip().lower() or "watchlist"
 
     raw_provider = _get_env_str("DATA_PROVIDER", "yahoo")
     data_provider = (raw_provider or "yahoo").strip().lower() or "yahoo"
+
+    raw_profile = _get_env_str("STRATEGY_PROFILE", "balanced")
+    strategy_profile = (raw_profile or "balanced").strip().lower() or "balanced"
 
     import os
 
@@ -124,14 +138,20 @@ def load_config() -> AppConfig:
     universe_min_prev_close = _get_env_float("UNIVERSE_MIN_PREV_CLOSE", 0.05)
     universe_limit = _get_env_int("UNIVERSE_LIMIT", 500)
 
+    # 캐시 TTL
+    avg_volume_cache_ttl_hours = _get_env_int("AVG_VOLUME_CACHE_TTL_HOURS", 12)
+    symbol_meta_cache_ttl_hours = _get_env_int("SYMBOL_META_CACHE_TTL_HOURS", 24)
+
     top_results = _get_env_int("TOP_RESULTS", 20)
 
     return AppConfig(
         tickers_file=tickers_file,
         universe_file=universe_file,
         universe_output_file=universe_output_file,
+        cache_dir=cache_dir,
         scan_mode=scan_mode,
         data_provider=data_provider,
+        strategy_profile=strategy_profile,
         polygon_api_key=polygon_api_key,
         universe_min_price=universe_min_price,
         universe_max_price=universe_max_price,
@@ -139,6 +159,8 @@ def load_config() -> AppConfig:
         universe_min_average_volume=universe_min_average_volume,
         universe_min_prev_close=universe_min_prev_close,
         universe_limit=universe_limit,
+        avg_volume_cache_ttl_hours=avg_volume_cache_ttl_hours,
+        symbol_meta_cache_ttl_hours=symbol_meta_cache_ttl_hours,
         filters=filters,
         per_symbol_delay_seconds=per_symbol_delay_seconds,
         top_results=top_results,

@@ -9,6 +9,11 @@ from scanner.market_hours import MarketClock
 from scanner.models import QuoteSnapshot
 from scanner.providers.base import MarketDataProvider
 from scanner.scoring import StockScore, score_quote
+from scanner.strategy_profiles import (
+    StrategyProfile,
+    get_effective_filters,
+    get_session_weights,
+)
 
 log = get_logger(__name__)
 
@@ -28,18 +33,24 @@ class PennyStockScanner:
         self,
         provider: MarketDataProvider,
         filters: ScanFilters,
+        strategy_profile: StrategyProfile,
         clock: MarketClock | None = None,
         top_results: int = 20,
     ) -> None:
         self.provider = provider
-        self.filters = filters
+        self.base_filters = filters
+        self.strategy_profile = strategy_profile
         self.clock = clock or MarketClock()
         self.top_results = top_results
 
     def scan(self, symbols: Iterable[str]) -> ScanResult:
         dt_et = self.clock.now_et()
         session = self.clock.session_of(dt_et)
-        log.info("Current market session (ET): %s (%s)", session, dt_et.strftime("%Y-%m-%d %H:%M:%S %Z"))
+        log.info(
+            "Current market session (ET): %s (%s)",
+            session,
+            dt_et.strftime("%Y-%m-%d %H:%M:%S %Z"),
+        )
 
         # Normalize incoming symbols
         symbol_list: list[str] = []
@@ -56,14 +67,20 @@ class PennyStockScanner:
 
         filtered: List[QuoteSnapshot] = []
         for sym, q in quotes.items():
-            if passes_filters(q, self.filters):
+            effective_filters = get_effective_filters(
+                self.base_filters,
+                q.market_session,
+                self.strategy_profile,
+            )
+            if passes_filters(q, effective_filters):
                 filtered.append(q)
             else:
                 log.debug("Filtered out %s", sym)
 
         scored_pairs: List[tuple[QuoteSnapshot, StockScore]] = []
         for q in filtered:
-            s = score_quote(q)
+            weights = get_session_weights(self.strategy_profile, q.market_session)
+            s = score_quote(q, weights)
             if s is None:
                 continue
             scored_pairs.append((q, s))

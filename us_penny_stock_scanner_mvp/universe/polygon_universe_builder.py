@@ -8,6 +8,7 @@ import requests
 
 from config import AppConfig
 from scanner.providers.polygon_provider import PolygonProvider, PolygonProviderConfig
+from utils.cache import JsonTTLCache
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -18,8 +19,13 @@ class UniverseBuildResult:
     total_candidates: int
     price_filtered: int
     liquidity_filtered: int
+    metadata_filtered: int
     saved_symbols: int
     output_file: Path
+    avg_volume_cache_hits: int
+    avg_volume_cache_misses: int
+    symbol_meta_cache_hits: int
+    symbol_meta_cache_misses: int
 
 
 def _fetch_all_snapshots(provider: PolygonProvider) -> Iterable[dict]:
@@ -137,19 +143,38 @@ def _first_stage_price_and_dollar_filter(
 def _fetch_average_volume_for_candidates(
     provider: PolygonProvider,
     candidates: List[Dict[str, object]],
-) -> List[Tuple[str, float]]:
+    cache: JsonTTLCache,
+) -> Tuple[Dict[str, float], int, int]:
     """
     2단계: 압축된 후보들에 대해서만 Polygon aggregates API 를 사용해
     평균 거래량을 계산한다.
 
-    반환값: (symbol, average_volume)
+    반환값: (symbol -> avg_volume, cache_hits, cache_misses)
     """
 
-    results: List[Tuple[str, float]] = []
+    results: Dict[str, float] = {}
+    hits = 0
+    misses = 0
+
     for c in candidates:
-        symbol = c["symbol"]
+        symbol = str(c["symbol"])
+
+        # 캐시 조회
+        hit, cached = cache.get(symbol)
+        if hit and cached is not None:
+            hits += 1
+            try:
+                results[symbol] = float(cached)
+            except Exception:
+                # 잘못된 캐시 값은 무시하고 새로 조회
+                pass
+            else:
+                continue
+
+        # 캐시 미스 또는 잘못된 값
+        misses += 1
         try:
-            avg_vol = provider._fetch_average_volume(str(symbol))
+            avg_vol = provider._fetch_average_volume(symbol)
         except Exception as e:  # pragma: no cover - 방어적 로깅
             log.warning("Failed to fetch average volume for %s: %s", symbol, e)
             continue
@@ -157,9 +182,15 @@ def _fetch_average_volume_for_candidates(
         if avg_vol is None:
             continue
 
-        results.append((str(symbol), avg_vol))
+        try:
+            avg_f = float(avg_vol)
+        except Exception:
+            continue
 
-    return results
+        results[symbol] = avg_f
+        cache.set(symbol, avg_f)
+
+    return results, hits, misses
 
 
 def _save_universe_file(path: Path, symbols: List[str]) -> None:
@@ -169,10 +200,125 @@ def _save_universe_file(path: Path, symbols: List[str]) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _is_excluded_symbol_pattern(symbol: str) -> bool:
+    """
+    워런트/유닛/우선주 등을 대략적으로 제거하기 위한 심볼 패턴 필터.
+    지나치게 공격적이지 않게, 대표적인 suffix 위주로만 필터링한다.
+    """
+
+    s = symbol.upper()
+
+    # 티커에 '.' 가 있는 경우, suffix 로 분리 (예: ABC.W, XYZ.U, AAA.PR, BBB.PRA)
+    if "." in s:
+        suffix = s.split(".")[-1]
+        if suffix in {"W", "WS", "WT", "WTS", "U", "UN", "RT", "R"}:
+            # warrant / unit / rights 가능성이 높은 패턴
+            return True
+        if suffix.startswith("PR"):
+            # PR, PRA, PRB, PRC ... → 우선주 패턴
+            return True
+
+    return False
+
+
+_EXCLUDED_TYPE_CODES = {
+    "ETF",
+    "ETN",
+    "FUND",
+    "MUTUAL_FUND",
+    "ADR",
+    "PFD",
+    "PREFERRED",
+    "RIGHT",
+    "UNIT",
+    "WARRANT",
+    "TRUST",
+    "ETP",
+}
+
+
+def _is_excluded_by_metadata(meta: Optional[dict]) -> bool:
+    """
+    Polygon 메타데이터(type/name 등)를 활용해
+    ETF / ETN / warrant / rights / units / preferred shares 등을 제외한다.
+    """
+
+    if not meta:
+        return False
+
+    type_code = str(meta.get("type") or "").upper()
+    if type_code in _EXCLUDED_TYPE_CODES:
+        return True
+
+    name = str(meta.get("name") or "").upper()
+    if any(
+        word in name
+        for word in [
+            "ETF",
+            "ETN",
+            "FUND",
+            "TRUST",
+            "PREFERRED",
+            "PREF",
+            "WARRANT",
+            "RIGHT",
+            "RIGHTS",
+            "UNIT",
+            "UNITS",
+        ]
+    ):
+        return True
+
+    return False
+
+
+def _get_symbol_metadata_with_cache(
+    provider: PolygonProvider,
+    symbol: str,
+    cache: JsonTTLCache,
+) -> Tuple[Optional[dict], bool]:
+    """
+    Polygon ticker 메타데이터를 캐시와 함께 조회한다.
+
+    반환값: (metadata or None, from_cache 여부)
+    """
+
+    hit, cached = cache.get(symbol)
+    if hit:
+        return (cached or None), True
+
+    url = f"{provider.cfg.base_url.rstrip('/')}/v3/reference/tickers/{symbol}"
+    params = {"apiKey": provider.cfg.api_key}
+
+    try:
+        resp = requests.get(url, params=params, timeout=provider.cfg.timeout_seconds)
+        resp.raise_for_status()
+        data = resp.json()
+        meta = data.get("results") or None
+    except Exception as e:  # pragma: no cover - 방어적 로깅
+        log.warning("Failed to fetch metadata for %s: %s", symbol, e)
+        meta = None
+
+    cache.set(symbol, meta)
+    return meta, False
+
+
+def _is_excluded_symbol(symbol: str, meta: Optional[dict]) -> bool:
+    """
+    심볼 패턴 + 메타데이터를 모두 고려해 제외 여부를 판단한다.
+    """
+
+    if _is_excluded_symbol_pattern(symbol):
+        return True
+    if _is_excluded_by_metadata(meta):
+        return True
+    return False
+
+
 def build_universe(config: AppConfig) -> UniverseBuildResult:
     """
-    Polygon 스냅샷 + aggregates 를 활용해
-    가격 + 유동성(달러 거래대금, 평균 거래량) 기반으로
+    Polygon 스냅샷 + aggregates + 메타데이터를 활용해
+    가격 + 유동성(달러 거래대금, 평균 거래량) + 타입 필터 기반으로
     동전주 유니버스를 생성한다.
     """
 
@@ -190,6 +336,18 @@ def build_universe(config: AppConfig) -> UniverseBuildResult:
 
     provider = PolygonProvider(
         PolygonProviderConfig(api_key=config.polygon_api_key)
+    )
+
+    # 캐시 준비
+    cache_dir = config.cache_dir
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    avg_cache = JsonTTLCache(
+        cache_dir / "polygon_avg_volume_cache.json",
+        ttl_hours=config.avg_volume_cache_ttl_hours,
+    )
+    meta_cache = JsonTTLCache(
+        cache_dir / "polygon_symbol_meta_cache.json",
+        ttl_hours=config.symbol_meta_cache_ttl_hours,
     )
 
     log.info(
@@ -212,26 +370,58 @@ def build_universe(config: AppConfig) -> UniverseBuildResult:
     stage1_candidates = _first_stage_price_and_dollar_filter(snapshots, config)
     price_filtered = len(stage1_candidates)
 
-    # 2단계: 압축된 후보에 대해서만 평균 거래량 계산
-    avg_volume_list = _fetch_average_volume_for_candidates(provider, stage1_candidates)
+    # 2단계: 압축된 후보에 대해서만 평균 거래량 계산 (캐시 포함)
+    avg_volume_map, avg_hits, avg_misses = _fetch_average_volume_for_candidates(
+        provider, stage1_candidates, avg_cache
+    )
 
     liquidity_pass: List[str] = []
-    for symbol, avg_vol in avg_volume_list:
+    for c in stage1_candidates:
+        symbol = str(c["symbol"])
+        avg_vol = avg_volume_map.get(symbol)
+        if avg_vol is None:
+            continue
         if avg_vol >= config.universe_min_average_volume:
             liquidity_pass.append(symbol)
 
     liquidity_filtered = len(liquidity_pass)
 
+    # 3단계: 메타데이터/심볼 패턴 기반 타입 필터
+    meta_filtered_symbols: List[str] = []
+    meta_cache_hits = 0
+    meta_cache_misses = 0
+
+    for symbol in liquidity_pass:
+        meta, from_cache = _get_symbol_metadata_with_cache(
+            provider, symbol, meta_cache
+        )
+        if from_cache:
+            meta_cache_hits += 1
+        else:
+            meta_cache_misses += 1
+
+        if _is_excluded_symbol(symbol, meta):
+            continue
+
+        meta_filtered_symbols.append(symbol)
+
+    metadata_filtered = len(meta_filtered_symbols)
+
     # 최종 limit 적용
-    final_symbols = liquidity_pass[: config.universe_limit]
+    final_symbols = meta_filtered_symbols[: config.universe_limit]
     _save_universe_file(config.universe_output_file, final_symbols)
+
+    # 캐시 저장
+    avg_cache.save()
+    meta_cache.save()
 
     log.info(
         "Universe build complete: total=%d, price_filtered=%d, "
-        "liquidity_filtered=%d, saved=%d, output=%s",
+        "liquidity_filtered=%d, metadata_filtered=%d, saved=%d, output=%s",
         total_candidates,
         price_filtered,
         liquidity_filtered,
+        metadata_filtered,
         len(final_symbols),
         config.universe_output_file,
     )
@@ -240,7 +430,12 @@ def build_universe(config: AppConfig) -> UniverseBuildResult:
         total_candidates=total_candidates,
         price_filtered=price_filtered,
         liquidity_filtered=liquidity_filtered,
+        metadata_filtered=metadata_filtered,
         saved_symbols=len(final_symbols),
         output_file=config.universe_output_file,
+        avg_volume_cache_hits=avg_hits,
+        avg_volume_cache_misses=avg_misses,
+        symbol_meta_cache_hits=meta_cache_hits,
+        symbol_meta_cache_misses=meta_cache_misses,
     )
 

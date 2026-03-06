@@ -37,8 +37,18 @@ def main() -> int:
     console.print(f"전체 후보 수: {result.total_candidates}")
     console.print(f"가격 필터 통과: {result.price_filtered}")
     console.print(f"유동성 필터 통과: {result.liquidity_filtered}")
+    console.print(f"메타데이터 필터 통과: {result.metadata_filtered}")
     console.print(f"최종 저장 종목 수: {result.saved_symbols}")
     console.print(f"출력 파일: {result.output_file}")
+
+    console.print(
+        f"\navg_volume cache hit: {result.avg_volume_cache_hits}, "
+        f"miss: {result.avg_volume_cache_misses}"
+    )
+    console.print(
+        f"meta cache hit: {result.symbol_meta_cache_hits}, "
+        f"miss: {result.symbol_meta_cache_misses}"
+    )
 
     console.print(
         "\n이제 .env 에서 SCAN_MODE=universe, "
