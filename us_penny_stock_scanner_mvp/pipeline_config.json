@@ -1,0 +1,6 @@
+{
+  "run_interval_minutes": 60,
+  "log_directory": "logs",
+  "pipeline_script": "research_pipeline.py",
+  "auto_restart": true
+}

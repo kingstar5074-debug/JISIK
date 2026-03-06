@@ -1552,3 +1552,177 @@ python strategy_regime_fusion.py \
     --regime-input reports/market_regime/market_regime.json
 ```
 
+## 22. Research Automation Pipeline
+
+스캔부터 최종 전략 fusion 까지 **한 번에 실행**하는 연구 자동화 파이프라인입니다.
+
+### 22-1. 목적
+
+- 단일 명령으로 전체 워크플로 실행
+- 각 단계를 subprocess 로 순서대로 호출
+- 일부 단계 실패 시에도 경고 후 다음 단계 진행, 마지막에 최종 전략 요약 출력
+
+### 22-2. 파이프라인 단계 (순서)
+
+1. **Scanner** — `main.py` 실행 (현재 설정 기준 스캔)
+2. **Scan snapshot** — `trade_outcome_tracker.py --save-scan`
+3. **Evaluate outcomes** — `trade_outcome_tracker.py --evaluate --delay-minutes N`
+4. **Outcome analysis** — `outcome_performance_analyzer.py`
+5. **Auto strategy selector** — `auto_strategy_selector.py`
+6. **Market regime detector** — `market_regime_detector.py`
+7. **Strategy + regime fusion** — `strategy_regime_fusion.py`
+
+### 22-3. CLI 옵션
+
+| 옵션 | 설명 |
+|------|------|
+| `--delay-minutes` | 평가 단계에서 사용할 지연 시간(분) | 기본 30 |
+| `--skip-scan` | 스캐너 단계 생략 |
+| `--skip-evaluate` | 결과 평가 단계 생략 |
+| `--skip-analysis` | 성능 분석 단계 생략 |
+| `--skip-selector` | 전략 추천 단계 생략 |
+| `--skip-regime` | 시장 regime 단계 생략 |
+| `--skip-fusion` | 최종 fusion 단계 생략 |
+| `--verbose` | 상세 로그 출력 |
+
+### 22-4. 실행 후 출력
+
+- 각 단계별 ✓/✗ 상태
+- 파이프라인 완료/실패 요약
+- `reports/final_strategy/final_strategy.json` 이 있으면 **Final Strategy**, **Market Regime**, **Confidence** 출력
+
+### 22-5. 사용 예
+
+```bash
+# 전체 파이프라인 실행 (기본 delay 30분)
+python research_pipeline.py
+
+# 평가 지연 60분으로 실행
+python research_pipeline.py --delay-minutes 60
+
+# 스캔 단계만 생략
+python research_pipeline.py --skip-scan
+```
+
+## 23. Research Dashboard
+
+파이프라인 결과(최종 전략, regime, 성능, heatmap 등)를 **한 화면에서 확인**할 수 있는 Streamlit 대시보드입니다.
+
+### 23-1. 목적
+
+- 최종 전략·시장 regime·전략 순위·성능·heatmap·파이프라인 상태를 한 번에 시각화
+- 파일이 없어도 "No data available yet." 로 안전하게 표시
+
+### 23-2. 실행 방법
+
+```bash
+streamlit run dashboard.py
+```
+
+브라우저에서 자동으로 열리며, 60초마다 자동 새로고침됩니다.
+
+### 23-3. 대시보드 구성
+
+| 패널 | 데이터 소스 | 표시 내용 |
+|------|-------------|-----------|
+| **Header** | — | 제목 "US Penny Stock Research Dashboard", 현재 시각 |
+| **Final Strategy** | `reports/final_strategy/final_strategy.json` | Final Strategy, Market Regime, Fusion Confidence, Selector Recommendation, reason |
+| **Market Regime** | `reports/market_regime/market_regime.json` | Regime, Average Return, Median Return, Volatility, Positive Rate |
+| **Strategy Ranking** | `reports/strategy_recommendation/recommended_strategy.json` | Strategy / Score 테이블 |
+| **Outcome Performance** | `reports/outcome_analysis/outcome_summary_strategy.csv` | CSV 테이블 + average_return 막대 차트 |
+| **Theme Heatmap** | `reports/heatmaps/` 최신 PNG | 최신 heatmap 이미지 |
+| **Pipeline Status** | 디렉터리/파일 존재 여부 | Scanner, Outcome analysis, Strategy recommendation, Regime detection (있으면 녹색, 없으면 경고) |
+
+파일이 없거나 오류가 나면 해당 패널에 "No data available yet." 또는 경고 메시지를 띄우며, 앱은 중단되지 않습니다.
+
+## 24. Production Runner & Scheduler
+
+연구 파이프라인을 **주기적으로 자동 실행**하는 스케줄러입니다.
+
+### 24-1. 목적
+
+- `research_pipeline.py` 를 설정된 간격으로 자동 실행
+- 실행 이력은 로그 디렉터리에 기록
+- 실패 시에도 로그만 남기고 계속 실행 (auto_restart)
+- 종료할 때까지 무한 루프로 동작
+
+### 24-2. 설정 파일
+
+`pipeline_config.json` (프로젝트 루트):
+
+| 필드 | 설명 | 예시 |
+|------|------|------|
+| `run_interval_minutes` | 파이프라인 실행 간격(분) | 60 |
+| `log_directory` | 로그 저장 디렉터리 | "logs" |
+| `pipeline_script` | 실행할 파이프라인 스크립트 | "research_pipeline.py" |
+| `auto_restart` | 실패 후에도 다음 주기에 재실행 여부 | true |
+
+### 24-3. 실행 방법
+
+```bash
+python scheduler_runner.py
+```
+
+설정에 따라 `run_interval_minutes` 마다 `research_pipeline.py` 가 실행되고, 로그는 `log_directory/scheduler_runner.log` 에 추가됩니다. Ctrl+C 로 종료할 수 있습니다.
+
+### 24-4. 동작 요약
+
+- 설정 로드 실패 시 종료 코드 1 로 종료
+- 각 실행 시작/완료/실패를 로그에 타임스탬프와 함께 기록
+- 파이프라인 타임아웃: 3600초(1시간)
+- `auto_restart` 가 false 이면 한 번 실행 후 종료
+
+## 25. Telegram Notification Reporter
+
+최종 연구 결과를 **Telegram** 으로 보내 일일 전략 요약을 받을 수 있습니다.
+
+### 25-1. 목적
+
+- `final_strategy.json` 기반으로 요약 메시지 작성
+- Telegram Bot API 로 전송 (POST sendMessage)
+- 파이프라인에서 `--send-telegram` 으로 선택적 연동
+
+### 25-2. 환경변수
+
+| 변수 | 설명 |
+|------|------|
+| `TELEGRAM_BOT_TOKEN` | 봇 토큰 (BotFather 발급) |
+| `TELEGRAM_CHAT_ID` | 수신 채팅방/유저 ID |
+
+둘 중 하나라도 없으면 전송 없이 메시지 출력 후 종료합니다.
+
+### 25-3. 입력 파일
+
+- **필수**: `reports/final_strategy/final_strategy.json`
+- **선택**: `reports/market_regime/market_regime.json`, `reports/strategy_recommendation/recommended_strategy.json` (필드 보강용)
+
+파일이 없거나 JSON 이 깨져 있으면 해당 필드는 "N/A" 또는 생략됩니다.
+
+### 25-4. dry-run
+
+전송 없이 메시지 내용만 확인할 때:
+
+```bash
+python telegram_reporter.py --dry-run
+```
+
+### 25-5. 사용 예
+
+```bash
+# 실제 전송 (환경변수 설정 필요)
+python telegram_reporter.py
+
+# 메시지 미리보기
+python telegram_reporter.py --dry-run
+```
+
+### 25-6. 파이프라인 연동
+
+fusion 단계까지 실행한 뒤 Telegram 전송까지 하려면:
+
+```bash
+python research_pipeline.py --send-telegram
+```
+
+전송 실패 시 파이프라인은 중단되지 않고 경고만 출력됩니다.
+
