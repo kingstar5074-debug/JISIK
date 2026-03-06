@@ -47,6 +47,13 @@ class AppConfig:
     per_symbol_delay_seconds: float
     top_results: int
 
+    # Theme strategy advisor 설정
+    theme_advisor_theme: str
+    theme_advisor_provider: str
+    theme_advisor_session: str
+    theme_advisor_tags: list[str]
+    theme_advisor_min_count: int
+
 
 def _get_env_str(name: str, default: str) -> str:
     import os
@@ -77,6 +84,27 @@ def _get_env_int(name: str, default: int) -> int:
         return int(v)
     except Exception:
         return default
+
+
+def _get_env_list_lower(name: str) -> list[str]:
+    import os
+
+    raw = os.getenv(name)
+    if not raw:
+        return []
+    items: list[str] = []
+    for part in raw.split(","):
+        s = part.strip().lower()
+        if s:
+            items.append(s)
+    # 중복 제거 (순서 유지)
+    seen: set[str] = set()
+    out: list[str] = []
+    for s in items:
+        if s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
 
 
 def load_config() -> AppConfig:
@@ -156,6 +184,13 @@ def load_config() -> AppConfig:
     avg_volume_cache_ttl_hours = _get_env_int("AVG_VOLUME_CACHE_TTL_HOURS", 12)
     symbol_meta_cache_ttl_hours = _get_env_int("SYMBOL_META_CACHE_TTL_HOURS", 24)
 
+    # Theme strategy advisor 설정
+    theme_advisor_theme = _get_env_str("THEME_ADVISOR_THEME", "").strip().lower()
+    theme_advisor_provider = _get_env_str("THEME_ADVISOR_PROVIDER", "").strip().lower()
+    theme_advisor_session = _get_env_str("THEME_ADVISOR_SESSION", "").strip().lower()
+    theme_advisor_tags = _get_env_list_lower("THEME_ADVISOR_TAGS")
+    theme_advisor_min_count = _get_env_int("THEME_ADVISOR_MIN_COUNT", 3)
+
     top_results = _get_env_int("TOP_RESULTS", 20)
 
     return AppConfig(
@@ -180,5 +215,10 @@ def load_config() -> AppConfig:
         filters=filters,
         per_symbol_delay_seconds=per_symbol_delay_seconds,
         top_results=top_results,
+        theme_advisor_theme=theme_advisor_theme,
+        theme_advisor_provider=theme_advisor_provider,
+        theme_advisor_session=theme_advisor_session,
+        theme_advisor_tags=theme_advisor_tags,
+        theme_advisor_min_count=theme_advisor_min_count,
     )
 
