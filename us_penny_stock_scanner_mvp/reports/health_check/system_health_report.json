@@ -1,0 +1,187 @@
+{
+  "generated_at": "2026-03-06T18:38:40.569391Z",
+  "overall_status": "UNHEALTHY",
+  "checks": [
+    {
+      "category": "core_files",
+      "status": "FAIL",
+      "details": [
+        {
+          "item": "main.py",
+          "status": "PASS",
+          "message": "exists"
+        },
+        {
+          "item": "research_pipeline.py",
+          "status": "PASS",
+          "message": "exists"
+        },
+        {
+          "item": "dashboard.py",
+          "status": "FAIL",
+          "message": "missing (critical)"
+        },
+        {
+          "item": "scheduler_runner.py",
+          "status": "PASS",
+          "message": "exists"
+        },
+        {
+          "item": "telegram_reporter.py",
+          "status": "PASS",
+          "message": "exists"
+        },
+        {
+          "item": "trade_outcome_tracker.py",
+          "status": "PASS",
+          "message": "exists"
+        },
+        {
+          "item": "outcome_performance_analyzer.py",
+          "status": "PASS",
+          "message": "exists"
+        },
+        {
+          "item": "auto_strategy_selector.py",
+          "status": "PASS",
+          "message": "exists"
+        },
+        {
+          "item": "market_regime_detector.py",
+          "status": "PASS",
+          "message": "exists"
+        },
+        {
+          "item": "strategy_regime_fusion.py",
+          "status": "PASS",
+          "message": "exists"
+        }
+      ]
+    },
+    {
+      "category": "directories",
+      "status": "PASS",
+      "details": [
+        {
+          "item": "C:\\Users\\kings\\Desktop\\JUSIK\\us_penny_stock_scanner_mvp\\reports",
+          "status": "PASS",
+          "message": "exists"
+        },
+        {
+          "item": "C:\\Users\\kings\\Desktop\\JUSIK\\us_penny_stock_scanner_mvp\\logs",
+          "status": "PASS",
+          "message": "exists"
+        },
+        {
+          "item": "C:\\Users\\kings\\Desktop\\JUSIK\\us_penny_stock_scanner_mvp\\reports\\runtime",
+          "status": "PASS",
+          "message": "created"
+        },
+        {
+          "item": "C:\\Users\\kings\\Desktop\\JUSIK\\us_penny_stock_scanner_mvp\\reports\\health_check",
+          "status": "PASS",
+          "message": "created"
+        }
+      ]
+    },
+    {
+      "category": "imports",
+      "status": "FAIL",
+      "details": [
+        {
+          "item": "main",
+          "status": "PASS",
+          "message": "import ok"
+        },
+        {
+          "item": "dashboard",
+          "status": "FAIL",
+          "message": "import failed: No module named 'dashboard'"
+        },
+        {
+          "item": "trade_outcome_tracker",
+          "status": "PASS",
+          "message": "import ok"
+        },
+        {
+          "item": "research_pipeline",
+          "status": "PASS",
+          "message": "import ok"
+        },
+        {
+          "item": "scanner.providers.factory",
+          "status": "PASS",
+          "message": "import ok"
+        }
+      ]
+    },
+    {
+      "category": "dashboard_artifacts",
+      "status": "WARN",
+      "details": [
+        {
+          "item": "C:\\Users\\kings\\Desktop\\JUSIK\\us_penny_stock_scanner_mvp\\reports\\final_strategy\\final_strategy.json",
+          "status": "WARN",
+          "message": "missing (dashboard will show no data)"
+        },
+        {
+          "item": "C:\\Users\\kings\\Desktop\\JUSIK\\us_penny_stock_scanner_mvp\\reports\\market_regime\\market_regime.json",
+          "status": "WARN",
+          "message": "missing (dashboard will show no data)"
+        },
+        {
+          "item": "C:\\Users\\kings\\Desktop\\JUSIK\\us_penny_stock_scanner_mvp\\reports\\strategy_recommendation\\recommended_strategy.json",
+          "status": "WARN",
+          "message": "missing (dashboard will show no data)"
+        },
+        {
+          "item": "C:\\Users\\kings\\Desktop\\JUSIK\\us_penny_stock_scanner_mvp\\reports\\outcome_analysis\\outcome_summary_strategy.csv",
+          "status": "WARN",
+          "message": "missing (dashboard table/curve may be empty)"
+        },
+        {
+          "item": "C:\\Users\\kings\\Desktop\\JUSIK\\us_penny_stock_scanner_mvp\\reports\\trade_outcomes\\trade_results.csv",
+          "status": "PASS",
+          "message": "csv ok"
+        },
+        {
+          "item": "C:\\Users\\kings\\Desktop\\JUSIK\\us_penny_stock_scanner_mvp\\reports\\heatmaps",
+          "status": "WARN",
+          "message": "directory missing"
+        }
+      ]
+    },
+    {
+      "category": "runtime_status",
+      "status": "WARN",
+      "details": [
+        {
+          "item": "C:\\Users\\kings\\Desktop\\JUSIK\\us_penny_stock_scanner_mvp\\reports\\runtime\\dashboard_runtime_status.json",
+          "status": "WARN",
+          "message": "status json missing"
+        },
+        {
+          "item": "C:\\Users\\kings\\Desktop\\JUSIK\\us_penny_stock_scanner_mvp\\reports\\runtime\\pipeline_running.lock",
+          "status": "PASS",
+          "message": "no lock file"
+        }
+      ]
+    },
+    {
+      "category": "telegram",
+      "status": "WARN",
+      "details": [
+        {
+          "item": "env",
+          "status": "WARN",
+          "message": "missing: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID"
+        },
+        {
+          "item": "C:\\Users\\kings\\Desktop\\JUSIK\\us_penny_stock_scanner_mvp\\.env",
+          "status": "PASS",
+          "message": ".env has token=True, chat_id=True"
+        }
+      ]
+    }
+  ]
+}

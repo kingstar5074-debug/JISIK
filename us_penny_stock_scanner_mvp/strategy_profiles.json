@@ -144,6 +144,64 @@
       "min_average_volume": 150000.0,
       "min_dollar_volume": 800000.0
     }
+  },
+  "test": {
+    "premarket_weights": {
+      "momentum_weight": 0.35,
+      "volume_weight": 0.25,
+      "gap_weight": 0.40,
+      "liquidity_weight": 0.15
+    },
+    "regular_weights": {
+      "momentum_weight": 0.45,
+      "volume_weight": 0.35,
+      "gap_weight": 0.20,
+      "liquidity_weight": 0.15
+    },
+    "afterhours_weights": {
+      "momentum_weight": 0.35,
+      "volume_weight": 0.40,
+      "gap_weight": 0.25,
+      "liquidity_weight": 0.15
+    },
+    "closed_weights": {
+      "momentum_weight": 0.45,
+      "volume_weight": 0.35,
+      "gap_weight": 0.20,
+      "liquidity_weight": 0.15
+    },
+    "premarket_thresholds": {
+      "min_change_percent": 5.0,
+      "min_gap_percent": 0.0,
+      "min_intraday_change_percent": 3.0,
+      "min_volume_ratio": 1.5,
+      "min_average_volume": 50000.0,
+      "min_dollar_volume": 100000.0
+    },
+    "regular_thresholds": {
+      "min_change_percent": 5.0,
+      "min_gap_percent": 0.0,
+      "min_intraday_change_percent": 3.0,
+      "min_volume_ratio": 1.5,
+      "min_average_volume": 50000.0,
+      "min_dollar_volume": 100000.0
+    },
+    "afterhours_thresholds": {
+      "min_change_percent": 5.0,
+      "min_gap_percent": 0.0,
+      "min_intraday_change_percent": 3.0,
+      "min_volume_ratio": 1.5,
+      "min_average_volume": 50000.0,
+      "min_dollar_volume": 100000.0
+    },
+    "closed_thresholds": {
+      "min_change_percent": 5.0,
+      "min_gap_percent": 0.0,
+      "min_intraday_change_percent": 3.0,
+      "min_volume_ratio": 1.5,
+      "min_average_volume": 50000.0,
+      "min_dollar_volume": 100000.0
+    }
   }
 }
 

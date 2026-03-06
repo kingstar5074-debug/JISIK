@@ -1735,3 +1735,94 @@ python research_pipeline.py --send-telegram
 
 전송 실패 시 파이프라인은 중단되지 않고 경고만 출력됩니다.
 
+## 27. System Health Check
+
+전체 시스템이 정상 동작 가능한지 점검하는 진단 스크립트입니다.
+
+### 27-1. 목적
+
+- 핵심 파일(`main.py`, `research_pipeline.py`, `dashboard.py` 등) 존재 여부 확인
+- `reports/`, `logs/`, `reports/runtime/` 디렉터리 생성 가능 여부 확인
+- 주요 모듈(`main`, `dashboard`, `trade_outcome_tracker`, `research_pipeline`, `scanner.providers.factory`) import 가능 여부 확인
+- 대시보드에서 사용하는 리포트 아티팩트(JSON/CSV/heatmap) 상태 확인 (없으면 WARN)
+- 런타임 상태 JSON / pipeline lock 파일 상태 확인 (없으면 WARN)
+- 텔레그램 설정이 **환경변수 또는 `.env`** 에 존재하는지 확인
+- 전체 health 요약 (HEALTHY / HEALTHY_WITH_WARNINGS / UNHEALTHY) 출력
+
+### 27-2. 사용 방법
+
+```bash
+python system_health_check.py
+python system_health_check.py --verbose
+python system_health_check.py --json
+python system_health_check.py --strict --check-telegram --check-dashboard
+```
+
+### 27-3. JSON 리포트
+
+- `--json` 옵션 사용 시 `reports/health_check/system_health_report.json` 에
+  기계가 읽을 수 있는 JSON 리포트를 생성합니다.
+
+### 27-4. 텔레그램 설정 판별
+
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` 가
+  - 현재 환경(env) 또는 `.env` 파일에서 발견되면 **유효한 설정(PASS)** 으로 간주
+  - 둘 중 하나만 발견되면 **WARN**
+  - 둘 다 어디에서도 찾지 못하면 **WARN**
+- 출력 시 실제 값은 일부 마스킹된 형태로만 표시됩니다.
+
+### 27-5. 권장 후속 조치 메시지
+
+health check 요약 하단에 예를 들어 다음과 같은 안내가 함께 출력됩니다.
+
+- `dashboard.py` 가 없으면: `Restore dashboard.py and rerun health check.`
+- 대시보드 핵심 리포트가 없으면: `Run research_pipeline.py to generate dashboard artifacts.`
+- 그 외에는: `System is healthy enough to proceed.`
+
+## 28. Watchlist Validator
+
+watchlist(`tickers.txt`)에 포함된 티커들이 실제로 유효한지 점검하고,
+원하면 자동으로 정리(clean)할 수 있는 도구입니다.
+
+### 28-1. 목적
+
+- 스캐너가 종종 0개 결과를 내는 원인을 찾기 위해
+  - 상장폐지 / 오타 / 데이터가 없는 티커를 찾아내고
+  - 필요 시 watchlist 에서 제거할 수 있게 합니다.
+
+### 28-2. 동작
+
+- `universe/watchlist_universe.py` 를 사용해 `tickers.txt` 에서 심볼 로드
+- `scanner.providers.factory.get_market_data_provider` 로 provider(yahoo 등) 생성
+- 각 심볼에 대해:
+  - `provider.fetch_quotes([symbol], market_session='regular')` 호출
+  - Quote 가 없거나 `current_price` 가 None 이면 INVALID
+  - 예외(HTTP 에러 등)는 INVALID로 분류
+- 요약 결과를 콘솔에 출력하고, 옵션에 따라 JSON 리포트 저장
+
+JSON 예:
+
+```json
+{
+  "generated_at": "...",
+  "total": 8,
+  "valid": 6,
+  "invalid": 2,
+  "invalid_symbols": ["MDJM", "DXS"]
+}
+```
+
+### 28-3. 사용 방법
+
+```bash
+# 단순 검증
+python watchlist_validator.py
+
+# 상세 로그
+python watchlist_validator.py --verbose
+
+# INVALID 심볼을 tickers.txt 에서 제거 (백업 파일 생성)
+python watchlist_validator.py --clean
+```
+
+기본 provider 는 `yahoo` 이며, `--provider` 옵션으로 다른 provider 이름을 지정할 수 있습니다.
