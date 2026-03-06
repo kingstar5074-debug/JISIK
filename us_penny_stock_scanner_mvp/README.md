@@ -19,10 +19,15 @@
   - **평균 거래량 캐시**
   - **심볼 메타데이터 캐시**
   를 도입하여 **Polygon 호출 수를 줄임**
-- 이번 배치에서
-  - **STRATEGY_PROFILE** 개념을 도입해
-  - balanced / aggressive / conservative 전략 프리셋을 지원하고
-  - 세션별 필터/가중치를 외부 전략 프로파일로 관리할 수 있게 함
+- 전략 운영 편의를 위해
+  - **STRATEGY_PROFILE** (balanced/aggressive/conservative) 를 지원하고
+  - 그 수치를 **`strategy_profiles.json` 외부 파일**에서 로드
+  - 코드 수정 없이 JSON만 바꿔도 전략 튜닝이 가능
+- 필터 동작/전략 효과를 이해하기 위해
+  - **세션 유효 필터 출력**
+  - **필터 리포트(단계별 탈락 개수)** 를 콘솔에 출력
+  - `compare_strategies.py` 로 전략별 비교 리포트 실행
+  - 비교 결과를 **JSON/CSV/PNG 차트** 로 `REPORTS_DIR`에 저장
 
 ## 2. 현재 기능 요약
 
@@ -70,7 +75,7 @@
       - regular    : momentum 0.45, volume 0.35, gap 0.20, liquidity 0.15
       - afterhours : momentum 0.35, volume 0.40, gap 0.25, liquidity 0.15
       - closed     : regular 와 동일
-    - aggressive / conservative 는 아래 전략 설명 섹션 참고
+    - aggressive / conservative 는 `strategy_profiles.json` 에 정의
   - `total_score` =
     - `momentum_score * momentum_weight +`
     - `volume_score * volume_weight +`
@@ -82,6 +87,13 @@
     - 세션별 가중치
     - 세션별 필터 최소값(모멘텀/갭/유동성 등)
     이 달라지며, `.env`의 `MIN_*` 값 위에서 오버라이드 형태로 적용
+  - **모든 수치는 `strategy_profiles.json` 에서 관리**되므로,
+    코드 수정 없이 JSON 수정만으로 전략 튜닝 가능
+- 필터 리포트
+  - 요청/성공/실패 개수
+  - missing_data / price / change / gap / intraday / volume_ratio /
+    average_volume / dollar_volume 별 탈락 개수
+  - 최종 필터 통과 수 / 점수화 수 / 최종 출력 수를 콘솔에 요약 출력
 
 ## 3. 프로젝트 구조
 
@@ -96,6 +108,7 @@ us_penny_stock_scanner_mvp/
   tickers.txt
   universe_candidates.txt
   generated_universe_candidates.txt
+  strategy_profiles.json
   scanner/
     __init__.py
     models.py
@@ -224,6 +237,7 @@ python main.py
 - 현재 스캔 모드(watchlist / universe)
 - 현재 데이터 provider (yahoo / polygon)
 - 현재 전략 프로파일 (balanced / aggressive / conservative)
+- 전략 프로파일 파일 이름 (`strategy_profiles.json` 기본)
 - 로드한 티커 수
 - 필터 값
   - 기본 필터(`MIN_*` 기반)
@@ -231,246 +245,175 @@ python main.py
 - 각 종목별:
   - price, change%, gap%, intraday%, avg_vol, dollar_vol, vol_ratio, score
 - 조회 성공 / 조회 실패 개수
+- 필터 리포트
+  - 어떤 필터에서 몇 종목이 탈락했는지 요약
 
-## 7. .env 설정값 설명
+## 7. strategy_profiles.json 설명
 
-### 7-1. 데이터 제공 / 모드
+전략 프리셋 수치를 JSON 파일(`strategy_profiles.json`)에 정의해  
+**코드 수정 없이 전략 수치만 자유롭게 튜닝**할 수 있습니다.
 
-- `DATA_PROVIDER`
-  - `yahoo`   : yfinance 기반 (기본값, 현재 안정적인 기본 경로)
-  - `polygon` : Polygon.io 기반 (API 키 필요)
-- `POLYGON_API_KEY`
-  - Polygon API 키
-  - `DATA_PROVIDER=polygon` 이면서 키가 없으면 친절한 에러 메시지를 띄우고 종료
-- `SCAN_MODE`
-  - `watchlist` : `tickers.txt` 기반 스캔 (기본값)
-  - `universe`  : `UNIVERSE_FILE`에서 티커를 로드해 스캔
-- `UNIVERSE_FILE`
-  - `SCAN_MODE=universe`일 때 사용하는 후보 풀 파일 이름
-  - 기본값: `universe_candidates.txt`
+### 7-1. 위치와 구조
 
-### 7-2. 전략 프리셋 STRATEGY_PROFILE
+- 기본 위치: 프로젝트 루트
+  - `us_penny_stock_scanner_mvp/strategy_profiles.json`
+- `.env` 의 `STRATEGY_PROFILES_FILE` 로 파일명을 변경할 수 있음
 
-자동매매/주문 API 없이, **필터/점수 가중치만 전략적으로 튜닝**하기 위한 프로파일입니다.
+예시 구조(요약):
+
+```json
+{
+  "balanced": {
+    "premarket_weights": {
+      "momentum_weight": 0.35,
+      "volume_weight": 0.25,
+      "gap_weight": 0.40,
+      "liquidity_weight": 0.15
+    },
+    "regular_weights": { ... },
+    "afterhours_weights": { ... },
+    "closed_weights": { ... },
+    "premarket_thresholds": {},
+    "regular_thresholds": {},
+    "afterhours_thresholds": {},
+    "closed_thresholds": {}
+  },
+  "aggressive": {
+    "premarket_weights": { ... },
+    "regular_weights": { ... },
+    "afterhours_weights": { ... },
+    "closed_weights": { ... },
+    "premarket_thresholds": {
+      "min_change_percent": 10.0,
+      "min_gap_percent": 3.0,
+      "min_intraday_change_percent": 8.0,
+      "min_volume_ratio": 2.0,
+      "min_average_volume": 80000.0,
+      "min_dollar_volume": 400000.0
+    },
+    "regular_thresholds": { ... },
+    "afterhours_thresholds": { ... },
+    "closed_thresholds": { ... }
+  },
+  "conservative": {
+    "premarket_weights": { ... },
+    "regular_weights": { ... },
+    "afterhours_weights": { ... },
+    "closed_weights": { ... },
+    "premarket_thresholds": {
+      "min_change_percent": 15.0,
+      "min_gap_percent": 5.0,
+      "min_intraday_change_percent": 10.0,
+      "min_volume_ratio": 3.0,
+      "min_average_volume": 150000.0,
+      "min_dollar_volume": 800000.0
+    },
+    "regular_thresholds": { ... },
+    "afterhours_thresholds": { ... },
+    "closed_thresholds": { ... }
+  }
+}
+```
+
+- `*_weights`
+  - `momentum_weight`, `volume_weight`, `gap_weight`, `liquidity_weight` 4개 필수
+- `*_thresholds`
+  - `min_change_percent`
+  - `min_gap_percent`
+  - `min_intraday_change_percent`
+  - `min_volume_ratio`
+  - `min_average_volume`
+  - `min_dollar_volume`
+  - 필요 없는 값은 생략하거나 `null` 로 두면 `.env` 의 `MIN_*` 값을 사용
+
+### 7-2. STRATEGY_PROFILES_FILE 설정
+
+- `.env`:
+
+```ini
+STRATEGY_PROFILES_FILE=strategy_profiles.json
+```
+
+- 다른 파일 이름/경로를 쓰고 싶다면:
+
+```ini
+STRATEGY_PROFILES_FILE=my_strategy_profiles.json
+```
+
+으로 바꾸고, 해당 JSON 파일을 같은 프로젝트 루트에 두면 됩니다.
+
+- 파일이 없거나, JSON 구조가 잘못되었거나, 필수 키가 누락되면:
+  - `strategy_profiles.py` 에서 `ValueError` 를 발생시키고
+  - `main.py` 가 그 메시지를 출력 후 종료합니다.
+
+### 7-3. 전략 수치 튜닝 방법
+
+1. `strategy_profiles.json` 을 열어 원하는 프로파일(`balanced`, `aggressive`, `conservative`)을 선택
+2. `*_weights` 또는 `*_thresholds` 의 숫자를 조정
+3. `.env` 의 `STRATEGY_PROFILE` 를 해당 프로파일로 설정
+4. `python main.py` 를 다시 실행
+
+코드를 건드리지 않고도  
+**세션별 가중치/필터 기준을 자유롭게 변경**할 수 있습니다.
+
+## 8. .env 설정값 설명 (전략 관련 요약)
 
 - `STRATEGY_PROFILE`
-  - `balanced`
-    - 현재 기본 동작과 거의 동일
-    - `.env` 의 `MIN_*` 값을 그대로 사용 (세션별 오버라이드 없음)
-    - 세션별 가중치는 초기 설계값을 유지
-  - `aggressive`
-    - gap / intraday / momentum 을 더 중시
-    - 필터 기준을 다소 완화해 **더 많은 후보**를 잡는 방향
-    - 예시(기본값 기준):
-      - `min_change_percent`: 10
-      - `min_gap_percent`: 3
-      - `min_intraday_change_percent`: 8
-      - `min_volume_ratio`: 2
-      - `min_average_volume`: 80,000
-      - `min_dollar_volume`: 400,000
-    - 세션별 가중치 예시:
-      - premarket  : momentum 0.40, volume 0.20, gap 0.45, liquidity 0.10
-      - regular    : momentum 0.50, volume 0.30, gap 0.20, liquidity 0.10
-      - afterhours : momentum 0.40, volume 0.40, gap 0.20, liquidity 0.10
-  - `conservative`
-    - 유동성과 거래 안정성을 더 중시
-    - 얇은 종목을 더 강하게 제거하는 방향
-    - 예시:
-      - `min_average_volume`: 150,000
-      - `min_dollar_volume`: 800,000
-    - 세션별 가중치 예시:
-      - premarket  : momentum 0.30, volume 0.30, gap 0.30, liquidity 0.20
-      - regular    : momentum 0.35, volume 0.35, gap 0.15, liquidity 0.25
-      - afterhours : momentum 0.30, volume 0.45, gap 0.10, liquidity 0.25
+  - `balanced` : 기본값, `.env` `MIN_*` 기준을 거의 그대로 사용
+  - `aggressive` : gap/momentum 을 중시, 필터 완화
+  - `conservative` : 유동성 중시, 평균 거래량/달러 거래대금 기준 강화
+- `STRATEGY_PROFILES_FILE`
+  - 전략 프리셋 JSON 파일 이름 (기본 `strategy_profiles.json`)
+  - JSON 구조만 올바르면 코드 수정 없이 수치를 바꿀 수 있음
 
-> **주의**  
-> - 전략 프리셋은 **초기 버전**이며, 나중에 숫자를 튜닝할 여지가 많습니다.  
-> - `.env` 의 `MIN_*` 값은 기본 베이스라인으로,  
->   각 세션의 `SessionThresholds` 에서 **필요한 값만 오버라이드** 합니다.  
-> - 지원하지 않는 STRATEGY_PROFILE 값이 들어가면  
->   `balanced, aggressive, conservative 중 하나여야 합니다.` 라는 에러와 함께 종료됩니다.
+나머지 `DATA_PROVIDER`, `SCAN_MODE`, `UNIVERSE_*`, `MIN_*`, 캐시 설정 등은  
+이전 섹션 설명과 동일합니다.
 
-### 7-3. 유니버스 생성용 UNIVERSE_* 설정 (1차 거친 필터)
+## 9. 필터 리포트 설명
 
-- `UNIVERSE_OUTPUT_FILE`
-  - `build_universe.py` 실행 시 생성할 유니버스 파일 이름
-  - 기본값: `generated_universe_candidates.txt`
-- `UNIVERSE_MIN_PRICE`
-  - 유니버스 생성 시 사용할 최소 가격 (기본 `0.05`)
-- `UNIVERSE_MAX_PRICE`
-  - 유니버스 생성 시 사용할 최대 가격 (기본 `1.00`)
-- `UNIVERSE_MIN_DOLLAR_VOLUME`
-  - 1단계 필터에서 사용하는 **최소 달러 거래대금**
-  - `dollar_volume = price * current_volume`
-  - 기본값: `300000` (30만 달러 이상만 남김)
-- `UNIVERSE_MIN_AVERAGE_VOLUME`
-  - 2단계 필터에서 사용하는 **최소 평균 거래량**
-  - Polygon aggregates 로 계산한 최근 N일 평균 거래량 기준
-  - 기본값: `50000` (5만 주 이상만 최종 채택)
-- `UNIVERSE_MIN_PREV_CLOSE`
-  - 전일 종가가 너무 낮거나 비정상인 종목 제거용 최소 전일 종가
-  - 기본값: `0.05`
-- `UNIVERSE_LIMIT`
-  - 유니버스 파일에 최종 저장할 최대 심볼 개수 (기본 `500`)
+스캐너 실행 후 콘솔에 다음과 같은 리포트가 추가로 출력됩니다.
 
-### 7-4. 스캐너용 MIN_* 설정 (2차 정교한 필터)
+예시:
 
-- `MIN_PRICE`
-  - 스캐너 필터용 최소 가격 (기본 `0.05`)
-- `MAX_PRICE`
-  - 스캐너 필터용 최대 가격 (기본 `1.00`)
-- `MIN_CHANGE_PERCENT`
-  - 스캐너 필터용 최소 상승률 % (기본 `15.0`)
-- `MIN_GAP_PERCENT`
-  - `gap_percent` 필터용 최소 갭 % (기본 `5.0`)
-- `MIN_INTRADAY_CHANGE_PERCENT`
-  - `intraday_change_percent` 필터용 최소 intraday % (기본 `10.0`)
-- `MIN_VOLUME_RATIO`
-  - 스캐너 필터용 최소 거래량비율 (기본 `3.0`)
-- `MIN_DOLLAR_VOLUME`
-  - 스캐너 단계에서 사용하는 최소 dollar_volume 필터값 (기본 `500000`)
-- `MIN_AVERAGE_VOLUME`
-  - 스캐너 단계에서 사용하는 최소 average_volume 필터값 (기본 `100000`)
-- `TOP_RESULTS`
-  - score 기준 상위 몇 개까지 출력할지 (기본 `20`)
+```text
+필터 리포트:
+- 요청 종목 수: 180
+- 조회 성공: 160
+- 조회 실패: 20
+- 데이터 누락 탈락: 12
+- price 탈락: 18
+- change 탈락: 25
+- gap 탈락: 30
+- intraday 탈락: 16
+- volume_ratio 탈락: 22
+- average_volume 탈락: 10
+- dollar_volume 탈락: 8
+- 최종 필터 통과: 19
+- 점수화 완료: 19
+- 최종 출력: 19
+```
 
-### 7-5. 캐시 설정 (유니버스 빌드 성능 개선용)
+의미:
 
-- `CACHE_DIR`
-  - 캐시 파일을 저장할 디렉터리 이름
-  - 기본값: `cache` (프로젝트 루트 기준 `./cache`)
-  - 내부 파일 예:
-    - `polygon_avg_volume_cache.json`
-    - `polygon_symbol_meta_cache.json`
-- `AVG_VOLUME_CACHE_TTL_HOURS`
-  - 평균 거래량 캐시 TTL(시간 단위)
-  - 기본값: `12` (12시간 이내 데이터는 재사용)
-- `SYMBOL_META_CACHE_TTL_HOURS`
-  - 심볼 메타데이터 캐시 TTL(시간 단위)
-  - 기본값: `24` (24시간 이내 메타데이터는 재사용)
+- **요청 종목 수**: 초기 티커 목록 개수
+- **조회 성공/실패**: 데이터 provider 호출 성공/실패 개수
+- **데이터 누락 탈락**: 필요한 필드(None)가 있어서 바로 탈락한 종목 수
+- **price/change/gap/intraday/volume_ratio/average_volume/dollar_volume 탈락**:
+  - 해당 조건을 **처음으로 위반한 시점** 기준으로 탈락 사유를 1개로 집계
+  - 여러 조건을 동시에 위반해도 첫 번째 위반 기준으로만 카운트
+- **최종 필터 통과**: 모든 필터를 통과한 종목 수
+- **점수화 완료**: 점수 계산까지 완료된 종목 수
+- **최종 출력**: 상위 `TOP_RESULTS` 컷 이후 콘솔에 실제로 표시된 종목 수
 
-### 7-6. 기타
+이를 통해
 
-- `PER_SYMBOL_DELAY_SECONDS`
-  - yfinance/Polygon 호출 사이의 딜레이 초 (기본 `0.2`, 레이트리밋 완화용)
-- `LOG_LEVEL`
-  - 로그 레벨(기본 `INFO`)
-- `LOG_DIR`
-  - 로그 저장 폴더(기본 `logs`)
+- 어떤 세션/전략에서
+- 어떤 필터가 가장 강하게 작동해
+- 얼마나 많은 종목을 탈락시키는지
 
-## 8. 리스크·유동성 + 타입 필터 설명
+한눈에 파악할 수 있어, 전략 튜닝에 직접적으로 도움이 됩니다.
 
-### 8-1. 유니버스 단계의 유동성 필터
-
-- **달러 거래대금 필터 (`UNIVERSE_MIN_DOLLAR_VOLUME`)**
-  - `dollar_volume = price * current_volume`
-  - snapshot 기준 현재 거래대금이 **너무 낮은 종목**을 1차적으로 제거
-- **평균 거래량 필터 (`UNIVERSE_MIN_AVERAGE_VOLUME`)**
-  - Polygon aggregates(N일) 로 계산한 평균 거래량이
-  - `UNIVERSE_MIN_AVERAGE_VOLUME` 미만인 종목은 최종 유니버스에서 제외
-- **전일 종가 필터 (`UNIVERSE_MIN_PREV_CLOSE`)**
-  - 전일 종가가 극단적으로 낮거나 비정상적인 종목을 제거
-
-이 단계에서 이미 “실제로 시장에서 어느 정도 거래가 이루어지는 동전주”만 남기기 때문에,  
-스캐너가 다루는 후보 풀 자체의 **기본 유동성 품질이 보장**됩니다.
-
-### 8-2. 유니버스 단계의 타입/심볼 필터
-
-- **제외 우선 대상 예시**
-  - ETF
-  - ETN
-  - warrant
-  - rights
-  - units
-  - preferred shares (우선주)
-- 구현 방식
-  - Polygon ticker reference 메타데이터의 `type`, `name` 등을 참고해
-    - `type` 이 ETF/ETN/FUND/PFD/RIGHT/UNIT/WARRANT 등일 경우 제외
-    - `name` 에 ETF/FUND/TRUST/PREFERRED/WARRANT/RIGHT/UNIT 등이 포함되면 제외
-  - 심볼 패턴 기반:
-    - `ABC.W`, `XYZ.U`, `AAA.PR`, `BBB.PRA` 등
-      - `.W`, `.WS`, `.WT`, `.U`, `.UN`, `.RT`, `.R`, `.PR*` suffix 등은
-        warrant / unit / rights / 우선주 가능성이 높다고 보고 제외
-- 한계
-  - Polygon 메타데이터가 빈약하거나 비표준인 심볼은 완전히 걸러지지 않을 수 있음
-  - 일부 애매한 케이스(예: 특수 구조의 보통주)가 과하게 제외될 가능성도 있으므로,
-    완벽한 법적 분류가 아니라 **실무적인 보통주 중심 유니버스** 수준으로 이해해야 함
-
-### 8-3. 스캐너 단계의 유동성 필터
-
-- **average_volume 필터 (`MIN_AVERAGE_VOLUME`)**
-  - 최근 거래량이 너무 적은 종목(거래가 거의 없는 종목)을 제외하기 위해 사용
-  - `average_volume >= MIN_AVERAGE_VOLUME` 인 종목만 통과
-- **dollar_volume 필터 (`MIN_DOLLAR_VOLUME`)**
-  - `current_price * current_volume` 으로 계산
-  - 실제 체결 가능성을 보기 위한 기초 지표
-  - `dollar_volume >= MIN_DOLLAR_VOLUME` 인 종목만 통과
-
-두 레벨의 유동성/타입 필터를 통해:
-
-1. **유니버스 단계**에서 “시장에 거의 존재하지 않거나, ETF/ETN/워런트/우선주 등 전략 외 종목”을 제거하고  
-2. **스캐너 단계**에서 전략에 맞게 “지나치게 얇은 / 위험한 종목”을 한 번 더 걸러냅니다.
-
-## 9. 캐시 동작 설명
-
-- **평균 거래량 캐시 (`polygon_avg_volume_cache.json`)**
-  - key: 심볼 (`"ABC"`, `"XYZ"` 등)
-  - value: `{ "value": <avg_volume>, "updated_at": <epoch_seconds> }`
-  - `AVG_VOLUME_CACHE_TTL_HOURS` 이내에 조회된 평균 거래량은 다시 Polygon aggregates를 호출하지 않고 캐시 재사용
-- **심볼 메타데이터 캐시 (`polygon_symbol_meta_cache.json`)**
-  - key: 심볼
-  - value: `{ "value": <metadata_dict>, "updated_at": <epoch_seconds> }`
-  - `SYMBOL_META_CACHE_TTL_HOURS` 이내에 조회된 메타데이터는 다시 reference API를 호출하지 않고 캐시 재사용
-- 공통 동작
-  - 캐시 파일이 없으면 자동으로 생성
-  - 파일이 깨져 있으면 조용히 무시하고 새로 시작
-  - TTL이 지나면 자동으로 만료로 간주하고 새로운 값을 조회
-  - 캐시 저장에 실패하더라도 유니버스 빌드 자체는 계속 진행
-
-## 10. 세션·전략 프리셋 기반 점수화 설명
-
-점수 계산은 `scanner/scoring.py` 의 `score_quote` 에서 수행되며,  
-세션/전략 프리셋에 따른 가중치는 `scanner/strategy_profiles.py` 에서 관리합니다.
-
-- 핵심 개념
-  - `StrategyWeights`
-    - `momentum_weight`, `volume_weight`, `gap_weight`, `liquidity_weight`
-  - `SessionThresholds`
-    - 세션별로 `min_change_percent`, `min_gap_percent`, `min_intraday_change_percent`,
-      `min_volume_ratio`, `min_average_volume`, `min_dollar_volume` 중 오버라이드할 값만 지정
-  - `StrategyProfile`
-    - `balanced`, `aggressive`, `conservative` 각각에 대해
-      - 세션별 가중치
-      - 세션별 필터 오버라이드
-    를 포함
-
-- 점수 계산식:
-
-  - `momentum_score = percent_change`
-  - `volume_score = volume_ratio * 10`
-  - `gap_score = gap_percent`
-  - `liquidity_score = min(dollar_volume / 1_000_000, 10)`
-  - `total_score =`
-    - `momentum_score * momentum_weight`
-    - `+ volume_score * volume_weight`
-    - `+ gap_score * gap_weight`
-    - `+ liquidity_score * liquidity_weight`
-
-- `PennyStockScanner` 동작 요약
-  1. `.env` 의 `MIN_*` 를 읽어 기본 `ScanFilters`(base_filters)를 구성
-  2. 현재 세션과 전략 프로파일을 기준으로
-     `get_effective_filters(base_filters, session, profile)` 를 호출해
-     실제 세션 유효 필터를 계산
-  3. 각 종목에 대해
-     - effective_filters + `passes_filters` 로 필터링
-     - `get_session_weights(profile, quote.market_session)` 를 통해
-       세션/전략별 가중치를 얻고
-     - `score_quote(quote, weights)` 로 점수 계산
-
-이를 통해 향후 전략 튜닝(가중치/필터 값 조정)을  
-`.env` + `strategy_profiles.py` 수준에서 쉽게 변경할 수 있게 설계되었습니다.
-
-## 11. 현재 한계점
+## 10. 현재 한계점
 
 - Yahoo(`yfinance`)는 **무료 데이터**이기 때문에
   - 지연, 누락, 레이트리밋(429) 등이 발생할 수 있음
@@ -481,7 +424,7 @@ python main.py
 - 타입/심볼 필터는
   - ETF/ETN/워런트/우선주 등을 최대한 제거하려는 **휴리스틱 규칙**일 뿐  
   - 100% 정확한 법적/거래소 분류를 보장하지 않습니다.
-- 전략 프리셋(balanced/aggressive/conservative)의 수치들은
+- 전략 프리셋의 수치들은
   - **초기 버전**으로, 실제 전략에 맞춰 추후 튜닝이 필요합니다.
 - 점수화는 단순 가중합 기반의 초기 버전이며,
   - 전략/위험 관리까지 고려한 정교한 스코어는 아닙니다.
@@ -492,7 +435,7 @@ python main.py
   - 텔레그램/슬랙 등 알림
   - 주문/자동매매 API 연동
 
-## 12. 실행 검증 체크리스트
+## 11. 실행 검증 체크리스트
 
 1. 가상환경 생성 (`python -m venv .venv` 또는 `python3 -m venv .venv`)
 2. 가상환경 활성화
@@ -504,7 +447,7 @@ python main.py
    - `UNIVERSE_FILE` / `UNIVERSE_OUTPUT_FILE`
    - `UNIVERSE_MIN_PRICE`, `UNIVERSE_MAX_PRICE`
    - `UNIVERSE_MIN_DOLLAR_VOLUME`, `UNIVERSE_MIN_AVERAGE_VOLUME`, `UNIVERSE_MIN_PREV_CLOSE`
-   - `STRATEGY_PROFILE`
+   - `STRATEGY_PROFILE`, `STRATEGY_PROFILES_FILE`
    - `CACHE_DIR`, `AVG_VOLUME_CACHE_TTL_HOURS`, `SYMBOL_META_CACHE_TTL_HOURS`
    - 스캐너용 필터 값(`MIN_*`)
 6. (선택) `DATA_PROVIDER=polygon`, `POLYGON_API_KEY` 설정 후 `python build_universe.py` 실행
@@ -514,10 +457,11 @@ python main.py
 10. 콘솔에서
     - 현재 시장 세션(ET)
     - 현재 스캔 모드 / provider
-    - 현재 전략 프로파일
+    - 현재 전략 프로파일 / 전략 프로파일 파일
     - 로드한 티커 수 / 필터 값
     - 세션 유효 필터(전략 오버라이드 반영)
     - 결과 표(gap%, intraday%, avg_vol, dollar_vol, vol_ratio, score)
     - 조회 성공/실패 개수
+    - 필터 리포트(탈락 사유별 개수)
     가 정상적으로 출력되는지 확인
 

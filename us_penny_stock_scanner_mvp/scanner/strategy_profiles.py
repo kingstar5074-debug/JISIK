@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from typing import Optional
+from pathlib import Path
+from typing import Dict, Optional
 
 from scanner.filters import ScanFilters
 from scanner.models import MarketSession
@@ -65,129 +67,194 @@ class StrategyProfile:
         return self.closed_thresholds
 
 
-def _inherit() -> SessionThresholds:
-    """
-    기본 ScanFilters 값을 그대로 쓰는 세션용.
-    """
+def _parse_weights(data: dict, key_path: str) -> StrategyWeights:
+    try:
+        w = StrategyWeights(
+            momentum_weight=float(data["momentum_weight"]),
+            volume_weight=float(data["volume_weight"]),
+            gap_weight=float(data["gap_weight"]),
+            liquidity_weight=float(data["liquidity_weight"]),
+        )
+    except KeyError as e:  # pragma: no cover - 방어적 검증
+        raise ValueError(
+            f"전략 프로파일 파일의 '{key_path}' 에 필요한 키가 없습니다: {e}"
+        ) from e
+    except Exception as e:  # pragma: no cover - 방어적 검증
+        raise ValueError(
+            f"전략 프로파일 파일의 '{key_path}' 값이 잘못되었습니다: {e}"
+        ) from e
 
-    return SessionThresholds()
+    # 값 검증: 음수 금지, 합이 너무 크지 않도록 제한
+    for field_name, value in [
+        ("momentum_weight", w.momentum_weight),
+        ("volume_weight", w.volume_weight),
+        ("gap_weight", w.gap_weight),
+        ("liquidity_weight", w.liquidity_weight),
+    ]:
+        if value < 0:
+            raise ValueError(
+                f"전략 프로파일 파일의 '{key_path}.{field_name}' 값은 0 이상이어야 합니다."
+            )
+
+    total = (
+        w.momentum_weight
+        + w.volume_weight
+        + w.gap_weight
+        + w.liquidity_weight
+    )
+    if total <= 0:
+        raise ValueError(
+            f"전략 프로파일 파일의 '{key_path}' 가중치 합이 0 이하여서는 안 됩니다."
+        )
+    if total > 10:
+        raise ValueError(
+            f"전략 프로파일 파일의 '{key_path}' 가중치 합이 너무 큽니다 (합={total}). "
+            "가중치 합은 0보다 크고 10 이하가 되도록 설정하는 것을 권장합니다."
+        )
+
+    return w
 
 
-def _balanced_profile() -> StrategyProfile:
-    """
-    balanced:
-    - 현재 기본 동작과 거의 동일
-    - 필터 값은 .env 기반, 세션별 오버라이드는 없음
-    """
-
-    premarket_w = StrategyWeights(0.35, 0.25, 0.40, 0.15)
-    regular_w = StrategyWeights(0.45, 0.35, 0.20, 0.15)
-    after_w = StrategyWeights(0.35, 0.40, 0.25, 0.15)
-    closed_w = regular_w
-
-    inherit = _inherit()
-
-    return StrategyProfile(
-        name="balanced",
-        premarket_weights=premarket_w,
-        regular_weights=regular_w,
-        afterhours_weights=after_w,
-        closed_weights=closed_w,
-        premarket_thresholds=inherit,
-        regular_thresholds=inherit,
-        afterhours_thresholds=inherit,
-        closed_thresholds=inherit,
+def _parse_thresholds(data: Optional[dict], key_prefix: str) -> SessionThresholds:
+    if not isinstance(data, dict):
+        return SessionThresholds()
+    t = SessionThresholds(
+        min_change_percent=data.get("min_change_percent"),
+        min_gap_percent=data.get("min_gap_percent"),
+        min_intraday_change_percent=data.get("min_intraday_change_percent"),
+        min_volume_ratio=data.get("min_volume_ratio"),
+        min_average_volume=data.get("min_average_volume"),
+        min_dollar_volume=data.get("min_dollar_volume"),
     )
 
+    # threshold 값 검증 (있으면 0 이상)
+    for field_name, value in [
+        ("min_change_percent", t.min_change_percent),
+        ("min_gap_percent", t.min_gap_percent),
+        ("min_intraday_change_percent", t.min_intraday_change_percent),
+        ("min_volume_ratio", t.min_volume_ratio),
+        ("min_average_volume", t.min_average_volume),
+        ("min_dollar_volume", t.min_dollar_volume),
+    ]:
+        if value is not None and value < 0:
+            raise ValueError(
+                f"전략 프로파일 파일의 '{key_prefix}.{field_name}' 값은 0 이상이어야 합니다."
+            )
 
-def _aggressive_profile() -> StrategyProfile:
+    return t
+
+
+def load_strategy_profiles(path: Path) -> Dict[str, StrategyProfile]:
     """
-    aggressive:
-    - gap / momentum 비중을 조금 더 높이고
-    - 필터 기준을 다소 완화해 더 많은 후보를 잡는 방향
-    """
-
-    premarket_w = StrategyWeights(0.40, 0.20, 0.45, 0.10)
-    regular_w = StrategyWeights(0.50, 0.30, 0.20, 0.10)
-    after_w = StrategyWeights(0.40, 0.40, 0.20, 0.10)
-    closed_w = regular_w
-
-    # 기본값(15/5/10/3/100k/500k) 대비 다소 완화
-    loose = SessionThresholds(
-        min_change_percent=10.0,
-        min_gap_percent=3.0,
-        min_intraday_change_percent=8.0,
-        min_volume_ratio=2.0,
-        min_average_volume=80_000.0,
-        min_dollar_volume=400_000.0,
-    )
-
-    return StrategyProfile(
-        name="aggressive",
-        premarket_weights=premarket_w,
-        regular_weights=regular_w,
-        afterhours_weights=after_w,
-        closed_weights=closed_w,
-        premarket_thresholds=loose,
-        regular_thresholds=loose,
-        afterhours_thresholds=loose,
-        closed_thresholds=loose,
-    )
-
-
-def _conservative_profile() -> StrategyProfile:
-    """
-    conservative:
-    - 유동성과 거래 안정성을 더 중시
-    - dollar_volume / average_volume 기준을 올리고
-    - volume/liquidity 가중치를 조금 더 줌
+    strategy_profiles.json 을 읽어 StrategyProfile 딕셔너리로 변환한다.
     """
 
-    premarket_w = StrategyWeights(0.30, 0.30, 0.30, 0.20)
-    regular_w = StrategyWeights(0.35, 0.35, 0.15, 0.25)
-    after_w = StrategyWeights(0.30, 0.45, 0.10, 0.25)
-    closed_w = regular_w
+    if not path.exists():
+        raise ValueError(
+            f"전략 프로파일 파일을 찾을 수 없습니다: {path}. "
+            "STRATEGY_PROFILES_FILE 경로를 확인해 주세요."
+        )
 
-    strict = SessionThresholds(
-        # 모멘텀 기준은 balanced 와 비슷하게 두고
-        min_change_percent=15.0,
-        min_gap_percent=5.0,
-        min_intraday_change_percent=10.0,
-        # 유동성 기준을 더 높임
-        min_volume_ratio=3.0,
-        min_average_volume=150_000.0,
-        min_dollar_volume=800_000.0,
-    )
+    try:
+        raw = path.read_text(encoding="utf-8")
+        obj = json.loads(raw)
+    except Exception as e:  # pragma: no cover - 방어적 검증
+        raise ValueError(
+            f"전략 프로파일 파일을 읽을 수 없습니다: {path} ({e})"
+        ) from e
 
-    return StrategyProfile(
-        name="conservative",
-        premarket_weights=premarket_w,
-        regular_weights=regular_w,
-        afterhours_weights=after_w,
-        closed_weights=closed_w,
-        premarket_thresholds=strict,
-        regular_thresholds=strict,
-        afterhours_thresholds=strict,
-        closed_thresholds=strict,
-    )
+    if not isinstance(obj, dict):
+        raise ValueError(
+            f"전략 프로파일 파일의 최상위 구조는 JSON object 여야 합니다: {path}"
+        )
+
+    profiles: Dict[str, StrategyProfile] = {}
+
+    required_sections = [
+        "premarket_weights",
+        "regular_weights",
+        "afterhours_weights",
+        "closed_weights",
+        "premarket_thresholds",
+        "regular_thresholds",
+        "afterhours_thresholds",
+        "closed_thresholds",
+    ]
+
+    for name, p in obj.items():
+        if not isinstance(p, dict):
+            raise ValueError(
+                f"전략 프로파일 '{name}' 의 값이 JSON object 가 아닙니다."
+            )
+
+        # 필수 섹션 존재 여부 검증
+        for sec in required_sections:
+            if sec not in p:
+                raise ValueError(
+                    f"전략 프로파일 파일의 '{name}.{sec}' 섹션이 누락되었습니다."
+                )
+
+        pw = _parse_weights(
+            p.get("premarket_weights") or {},
+            f"{name}.premarket_weights",
+        )
+        rw = _parse_weights(
+            p.get("regular_weights") or {},
+            f"{name}.regular_weights",
+        )
+        aw = _parse_weights(
+            p.get("afterhours_weights") or {},
+            f"{name}.afterhours_weights",
+        )
+        cw = _parse_weights(
+            p.get("closed_weights") or {},
+            f"{name}.closed_weights",
+        )
+
+        pt = _parse_thresholds(p.get("premarket_thresholds"), f"{name}.premarket_thresholds")
+        rt = _parse_thresholds(p.get("regular_thresholds"), f"{name}.regular_thresholds")
+        at = _parse_thresholds(p.get("afterhours_thresholds"), f"{name}.afterhours_thresholds")
+        ct = _parse_thresholds(p.get("closed_thresholds"), f"{name}.closed_thresholds")
+
+        profiles[name.strip().lower()] = StrategyProfile(
+            name=name,
+            premarket_weights=pw,
+            regular_weights=rw,
+            afterhours_weights=aw,
+            closed_weights=cw,
+            premarket_thresholds=pt,
+            regular_thresholds=rt,
+            afterhours_thresholds=at,
+            closed_thresholds=ct,
+        )
+
+    if not profiles:
+        raise ValueError(
+            f"전략 프로파일 파일에 유효한 프로파일이 없습니다: {path}"
+        )
+
+    return profiles
 
 
-_PROFILES: dict[str, StrategyProfile] = {
-    "balanced": _balanced_profile(),
-    "aggressive": _aggressive_profile(),
-    "conservative": _conservative_profile(),
-}
+def get_strategy_profile(name: str, path: Path | None = None) -> StrategyProfile:
+    """
+    이름과 파일 경로를 기준으로 StrategyProfile 을 반환한다.
+    """
 
+    if path is None:
+        # 기본값: 프로젝트 루트의 strategy_profiles.json
+        base = Path(__file__).resolve().parent.parent
+        path = base / "strategy_profiles.json"
 
-def get_strategy_profile(name: str) -> StrategyProfile:
+    profiles = load_strategy_profiles(path)
     key = (name or "").strip().lower()
-    if key not in _PROFILES:
-        supported = ", ".join(sorted(_PROFILES.keys()))
+    if key not in profiles:
+        supported = ", ".join(sorted(profiles.keys()))
         raise ValueError(
             f"지원하지 않는 STRATEGY_PROFILE 값입니다: '{name}'. "
-            f"{supported} 중 하나여야 합니다."
+            f"{supported} 중 하나여야 합니다. (파일: {path.name})"
         )
-    return _PROFILES[key]
+    return profiles[key]
 
 
 def get_effective_filters(
@@ -224,4 +291,5 @@ def get_session_weights(
     session: MarketSession,
 ) -> StrategyWeights:
     return profile.weights_for(session)
+
 

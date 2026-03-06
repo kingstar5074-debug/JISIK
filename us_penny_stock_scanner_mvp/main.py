@@ -28,7 +28,7 @@ def main() -> int:
 
     # 전략 프로파일 로드/검증
     try:
-        profile = get_strategy_profile(cfg.strategy_profile)
+        profile = get_strategy_profile(cfg.strategy_profile, cfg.strategy_profiles_file)
     except ValueError as e:
         console.print(str(e))
         return 1
@@ -56,6 +56,7 @@ def main() -> int:
     console.print(f"현재 스캔 모드: {cfg.scan_mode}")
     console.print(f"현재 데이터 provider: {cfg.data_provider}")
     console.print(f"현재 전략 프로파일: {profile.name}")
+    console.print(f"전략 프로파일 파일: {cfg.strategy_profiles_file.name}")
     console.print(f"로드한 티커 수: {len(tickers)}")
     console.print(
         "필터(기본값): "
@@ -100,6 +101,23 @@ def main() -> int:
 
     console.print(f"조회 성공: {result.fetch_success}")
     console.print(f"조회 실패: {result.fetch_failed}")
+
+    fr = result.filter_report
+    console.print("필터 리포트:")
+    console.print(f"- 요청 종목 수: {fr.total_requested}")
+    console.print(f"- 조회 성공: {fr.fetch_success}")
+    console.print(f"- 조회 실패: {fr.fetch_failed}")
+    console.print(f"- 데이터 누락 탈락: {fr.missing_data_filtered}")
+    console.print(f"- price 탈락: {fr.price_filtered}")
+    console.print(f"- change 탈락: {fr.change_filtered}")
+    console.print(f"- gap 탈락: {fr.gap_filtered}")
+    console.print(f"- intraday 탈락: {fr.intraday_filtered}")
+    console.print(f"- volume_ratio 탈락: {fr.volume_ratio_filtered}")
+    console.print(f"- average_volume 탈락: {fr.average_volume_filtered}")
+    console.print(f"- dollar_volume 탈락: {fr.dollar_volume_filtered}")
+    console.print(f"- 최종 필터 통과: {fr.passed_filters}")
+    console.print(f"- 점수화 완료: {fr.scored_count}")
+    console.print(f"- 최종 출력: {fr.returned_count}")
 
     return 0
 

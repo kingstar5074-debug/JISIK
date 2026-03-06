@@ -1,0 +1,149 @@
+{
+  "balanced": {
+    "premarket_weights": {
+      "momentum_weight": 0.35,
+      "volume_weight": 0.25,
+      "gap_weight": 0.40,
+      "liquidity_weight": 0.15
+    },
+    "regular_weights": {
+      "momentum_weight": 0.45,
+      "volume_weight": 0.35,
+      "gap_weight": 0.20,
+      "liquidity_weight": 0.15
+    },
+    "afterhours_weights": {
+      "momentum_weight": 0.35,
+      "volume_weight": 0.40,
+      "gap_weight": 0.25,
+      "liquidity_weight": 0.15
+    },
+    "closed_weights": {
+      "momentum_weight": 0.45,
+      "volume_weight": 0.35,
+      "gap_weight": 0.20,
+      "liquidity_weight": 0.15
+    },
+    "premarket_thresholds": {},
+    "regular_thresholds": {},
+    "afterhours_thresholds": {},
+    "closed_thresholds": {}
+  },
+  "aggressive": {
+    "premarket_weights": {
+      "momentum_weight": 0.40,
+      "volume_weight": 0.20,
+      "gap_weight": 0.45,
+      "liquidity_weight": 0.10
+    },
+    "regular_weights": {
+      "momentum_weight": 0.50,
+      "volume_weight": 0.30,
+      "gap_weight": 0.20,
+      "liquidity_weight": 0.10
+    },
+    "afterhours_weights": {
+      "momentum_weight": 0.40,
+      "volume_weight": 0.40,
+      "gap_weight": 0.20,
+      "liquidity_weight": 0.10
+    },
+    "closed_weights": {
+      "momentum_weight": 0.50,
+      "volume_weight": 0.30,
+      "gap_weight": 0.20,
+      "liquidity_weight": 0.10
+    },
+    "premarket_thresholds": {
+      "min_change_percent": 10.0,
+      "min_gap_percent": 3.0,
+      "min_intraday_change_percent": 8.0,
+      "min_volume_ratio": 2.0,
+      "min_average_volume": 80000.0,
+      "min_dollar_volume": 400000.0
+    },
+    "regular_thresholds": {
+      "min_change_percent": 10.0,
+      "min_gap_percent": 3.0,
+      "min_intraday_change_percent": 8.0,
+      "min_volume_ratio": 2.0,
+      "min_average_volume": 80000.0,
+      "min_dollar_volume": 400000.0
+    },
+    "afterhours_thresholds": {
+      "min_change_percent": 10.0,
+      "min_gap_percent": 3.0,
+      "min_intraday_change_percent": 8.0,
+      "min_volume_ratio": 2.0,
+      "min_average_volume": 80000.0,
+      "min_dollar_volume": 400000.0
+    },
+    "closed_thresholds": {
+      "min_change_percent": 10.0,
+      "min_gap_percent": 3.0,
+      "min_intraday_change_percent": 8.0,
+      "min_volume_ratio": 2.0,
+      "min_average_volume": 80000.0,
+      "min_dollar_volume": 400000.0
+    }
+  },
+  "conservative": {
+    "premarket_weights": {
+      "momentum_weight": 0.30,
+      "volume_weight": 0.30,
+      "gap_weight": 0.30,
+      "liquidity_weight": 0.20
+    },
+    "regular_weights": {
+      "momentum_weight": 0.35,
+      "volume_weight": 0.35,
+      "gap_weight": 0.15,
+      "liquidity_weight": 0.25
+    },
+    "afterhours_weights": {
+      "momentum_weight": 0.30,
+      "volume_weight": 0.45,
+      "gap_weight": 0.10,
+      "liquidity_weight": 0.25
+    },
+    "closed_weights": {
+      "momentum_weight": 0.35,
+      "volume_weight": 0.35,
+      "gap_weight": 0.15,
+      "liquidity_weight": 0.25
+    },
+    "premarket_thresholds": {
+      "min_change_percent": 15.0,
+      "min_gap_percent": 5.0,
+      "min_intraday_change_percent": 10.0,
+      "min_volume_ratio": 3.0,
+      "min_average_volume": 150000.0,
+      "min_dollar_volume": 800000.0
+    },
+    "regular_thresholds": {
+      "min_change_percent": 15.0,
+      "min_gap_percent": 5.0,
+      "min_intraday_change_percent": 10.0,
+      "min_volume_ratio": 3.0,
+      "min_average_volume": 150000.0,
+      "min_dollar_volume": 800000.0
+    },
+    "afterhours_thresholds": {
+      "min_change_percent": 15.0,
+      "min_gap_percent": 5.0,
+      "min_intraday_change_percent": 10.0,
+      "min_volume_ratio": 3.0,
+      "min_average_volume": 150000.0,
+      "min_dollar_volume": 800000.0
+    },
+    "closed_thresholds": {
+      "min_change_percent": 15.0,
+      "min_gap_percent": 5.0,
+      "min_intraday_change_percent": 10.0,
+      "min_volume_ratio": 3.0,
+      "min_average_volume": 150000.0,
+      "min_dollar_volume": 800000.0
+    }
+  }
+}
+

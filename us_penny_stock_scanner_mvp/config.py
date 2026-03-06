@@ -15,8 +15,14 @@ class AppConfig:
     universe_file: Path
     universe_output_file: Path
 
+    # 전략 프로파일 파일
+    strategy_profiles_file: Path
+
     # 캐시 디렉터리
     cache_dir: Path
+
+    # 리포트 출력 디렉터리
+    reports_dir: Path
 
     # 모드 & 데이터 공급자 & 전략 프로파일
     scan_mode: str
@@ -92,8 +98,16 @@ def load_config() -> AppConfig:
     )
     universe_output_file = project_root / universe_output_name
 
+    profiles_file_name = _get_env_str(
+        "STRATEGY_PROFILES_FILE", "strategy_profiles.json"
+    )
+    strategy_profiles_file = project_root / profiles_file_name
+
     cache_dir_name = _get_env_str("CACHE_DIR", "cache")
     cache_dir = project_root / cache_dir_name
+
+    reports_dir_name = _get_env_str("REPORTS_DIR", "reports")
+    reports_dir = project_root / reports_dir_name
 
     # 모드 / provider / 전략 프로파일
     raw_mode = _get_env_str("SCAN_MODE", "watchlist")
@@ -148,7 +162,9 @@ def load_config() -> AppConfig:
         tickers_file=tickers_file,
         universe_file=universe_file,
         universe_output_file=universe_output_file,
+        strategy_profiles_file=strategy_profiles_file,
         cache_dir=cache_dir,
+        reports_dir=reports_dir,
         scan_mode=scan_mode,
         data_provider=data_provider,
         strategy_profile=strategy_profile,
