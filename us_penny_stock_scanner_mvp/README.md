@@ -1606,7 +1606,8 @@ python research_pipeline.py --skip-scan
 
 ## 23. Research Dashboard
 
-파이프라인 결과(최종 전략, regime, 성능, heatmap 등)를 **한 화면에서 확인**할 수 있는 Streamlit 대시보드입니다.
+파이프라인 결과(최종 전략, regime, 성능, heatmap 등)를 **한 화면에서 확인**할 수 있는 Streamlit 대시보드입니다.  
+대시보드 UI 는 **한글 인터페이스**로 표시됩니다.
 
 ### 23-1. 목적
 
@@ -1621,19 +1622,27 @@ streamlit run dashboard.py
 
 브라우저에서 자동으로 열리며, 60초마다 자동 새로고침됩니다.
 
+### 23-0. 추가 기능 (Dashboard Upgrade Pack)
+
+대시보드에는 다음 기능들이 추가로 포함되어 있습니다.
+
+- 한국어 / English 언어 토글
+- 다크모드 토글
+- 누적 수익 곡선(Equity Curve) 차트
+
 ### 23-3. 대시보드 구성
 
 | 패널 | 데이터 소스 | 표시 내용 |
 |------|-------------|-----------|
-| **Header** | — | 제목 "US Penny Stock Research Dashboard", 현재 시각 |
-| **Final Strategy** | `reports/final_strategy/final_strategy.json` | Final Strategy, Market Regime, Fusion Confidence, Selector Recommendation, reason |
-| **Market Regime** | `reports/market_regime/market_regime.json` | Regime, Average Return, Median Return, Volatility, Positive Rate |
-| **Strategy Ranking** | `reports/strategy_recommendation/recommended_strategy.json` | Strategy / Score 테이블 |
-| **Outcome Performance** | `reports/outcome_analysis/outcome_summary_strategy.csv` | CSV 테이블 + average_return 막대 차트 |
+| **Header** | — | 제목 "미국 페니주 자동 리서치 대시보드", 현재 시각 |
+| **Final Strategy** | `reports/final_strategy/final_strategy.json` | 최종 추천 전략, 시장 상태, 전략 신뢰도, 전략 추천 결과, 추천 이유 |
+| **Market Regime** | `reports/market_regime/market_regime.json` | 시장 상태, 평균 수익률, 중앙 수익률, 변동성, 양수 거래 비율 |
+| **Strategy Ranking** | `reports/strategy_recommendation/recommended_strategy.json` | 전략 / 점수 테이블 |
+| **Outcome Performance** | `reports/outcome_analysis/outcome_summary_strategy.csv` | CSV 테이블 + 전략별 평균 수익률 막대 차트 |
 | **Theme Heatmap** | `reports/heatmaps/` 최신 PNG | 최신 heatmap 이미지 |
 | **Pipeline Status** | 디렉터리/파일 존재 여부 | Scanner, Outcome analysis, Strategy recommendation, Regime detection (있으면 녹색, 없으면 경고) |
 
-파일이 없거나 오류가 나면 해당 패널에 "No data available yet." 또는 경고 메시지를 띄우며, 앱은 중단되지 않습니다.
+파일이 없거나 오류가 나면 해당 패널에 "아직 데이터가 없습니다." 또는 경고 메시지를 띄우며, 앱은 중단되지 않습니다.
 
 ## 24. Production Runner & Scheduler
 
