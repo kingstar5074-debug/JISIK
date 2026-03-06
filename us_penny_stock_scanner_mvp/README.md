@@ -1181,3 +1181,374 @@ python heatmap_viewer.py \
   - 이후 열에 각 strategy 의 값
   을 기록합니다.
 
+## 17. Trade Outcome Tracker
+
+점수 기반 스캔 결과가 **실제 가격에서 어떻게 움직였는지**를 추적하기 위한 도구입니다.  
+스캔 시점의 종목/가격을 CSV 스냅샷으로 저장해 두었다가,  
+일정 시간이 지난 뒤 같은 종목의 가격을 다시 조회해 단순 수익률을 계산합니다.
+
+### 17-1. 저장 위치 및 포맷
+
+모든 파일은 `reports/trade_outcomes/` 아래에 저장됩니다.
+
+- `scan_snapshots.csv`  
+  - 스캔 시점의 스냅샷
+  - 컬럼:
+    - `timestamp`  (ISO 형식, 예: `2026-03-07T09:30:00`)
+    - `symbol`
+    - `price`
+    - `strategy`
+    - `theme`
+    - `provider`
+    - `session`
+- `trade_results.csv`  
+  - 나중에 평가한 실제 수익률 결과
+  - 컬럼:
+    - `timestamp_entry`
+    - `timestamp_exit`
+    - `symbol`
+    - `strategy`
+    - `theme`
+    - `provider`
+    - `session`
+    - `entry_price`
+    - `exit_price`
+    - `return_pct`
+
+수익률은 다음 공식으로 계산됩니다.
+
+\[
+\text{return\_pct} = \frac{\text{exit\_price} - \text{entry\_price}}{\text{entry\_price}} \times 100
+\]
+
+CSV 파일이 없으면 자동으로 생성되며, 빈 파일이어도 헤더를 포함하도록 안전하게 처리합니다.
+
+### 17-2. MODE 1 – 스캔 스냅샷 저장 (--save-scan)
+
+현재 설정된 스캐너를 한 번 실행하고, 상위 결과들을 `scan_snapshots.csv` 에 추가로 저장합니다.
+
+사용 예:
+
+```bash
+python trade_outcome_tracker.py --save-scan
+```
+
+동작 개요:
+
+- `.env` 설정을 사용해
+  - `SCAN_MODE` (watchlist / universe)
+  - `DATA_PROVIDER` (yahoo / polygon)
+  - `STRATEGY_PROFILE` (balanced / aggressive / conservative)
+  을 그대로 재사용합니다.
+- universe(tickers) 를 로드 후 `PennyStockScanner` 로 스캔을 수행합니다.
+- 스캔 결과(`ScanResult.matched`)의 각 종목에 대해:
+  - `timestamp` : 스냅샷 저장 시각(현재 시각, ISO 형식)
+  - `symbol` : 종목 심볼
+  - `price` : 스캔 시점의 `current_price`
+  - `strategy` : 현재 활성화된 전략 프로파일 이름 (예: `balanced`)
+  - `theme` : theme tagging 결과 (여러 테마인 경우 첫 번째 태그, 없으면 `unknown`)
+  - `provider` : 사용된 데이터 provider (예: `yahoo`, `polygon`)
+  - `session` : 스캔 시점의 시장 세션 (premarket / regular / afterhours / closed)
+  을 한 줄씩 `scan_snapshots.csv` 에 append 합니다.
+
+가격이 없는 종목(`current_price is None`)은 스냅샷에서 자동으로 제외됩니다.
+
+### 17-3. MODE 2 – 결과 평가 (--evaluate)
+
+이전에 저장된 스냅샷들을 불러와, 일정 시간이 지난 뒤의 가격으로  
+단순 수익률을 계산해 `trade_results.csv` 에 기록합니다.
+
+기본 사용 예:
+
+```bash
+python trade_outcome_tracker.py --evaluate --delay-minutes 30
+```
+
+옵션:
+
+- `--delay-minutes`  
+  - 스냅샷 시점으로부터 최소 경과 시간(분)
+  - 이 시간보다 덜 지난 스냅샷은 평가 대상에서 제외되고, 파일에 그대로 남습니다.
+- `--provider`  
+  - 평가 시 사용할 provider 를 강제로 지정 (예: `yahoo`, `polygon`)
+  - 미지정 시 `.env` 의 `DATA_PROVIDER` 값을 사용합니다.
+- `--session`  
+  - 스냅샷의 `session` 컬럼을 기준으로 필터링
+  - 예: `--session premarket` → premarket 스냅샷만 평가
+
+동작 개요:
+
+1. `scan_snapshots.csv` 를 읽습니다. (파일이 없거나 비어 있으면 조용히 종료)
+2. 각 행에 대해:
+   - `timestamp`가 `delay-minutes` 만큼 충분히 지났는지 확인
+   - `--provider`, `--session` 이 지정돼 있으면 해당 컬럼 값으로 필터링
+3. 평가 대상 스냅샷에 대해서만 현재 provider 로 최신 가격을 조회합니다.
+   - 조회 시에는 현재 시장 세션 기반으로 가격을 선택합니다.
+4. 조회에 성공하고 `entry_price > 0` 이면:
+   - `return_pct` 를 계산하여 `trade_results.csv` 에 한 줄 추가
+   - 이 스냅샷 행은 `scan_snapshots.csv` 에서 제거 (이미 처리된 것으로 간주)
+5. 조회 실패, 가격 누락, 파싱 오류 등은 **Skipped** 로 집계되며:
+   - 해당 스냅샷은 파일에 그대로 남겨두어, 이후 다시 평가할 수 있게 합니다.
+
+콘솔에는 다음과 같은 요약이 출력됩니다.
+
+- `Processed trades: X`
+- `Skipped symbols: Y`
+- `Remaining snapshots: Z`
+
+### 17-4. 안전성 및 제약 사항
+
+- CSV 파일이 없거나 비어 있어도 예외 없이 동작합니다.
+- 잘못된 행(필수 컬럼 누락, 파싱 실패 등)은 평가에서 제외되며,  
+  가능한 경우 나머지 데이터 처리는 계속 진행됩니다.
+- provider 호출 실패나 부분적인 quote(가격 누락)도 전체 스크립트를 중단시키지 않고,  
+  해당 심볼만 `Skipped` 로 처리합니다.
+- 이 도구는 **실제 주문/체결 정보와는 전혀 연동되지 않으며**,  
+  어디까지나 스캔 시점 가격과 이후 가격만을 비교하는 단순 PnL 지표입니다.
+
+## 18. Outcome Performance Analyzer
+
+Trade Outcome Tracker 가 생성한 **실제 거래 결과**(`trade_results.csv`)를 읽어,  
+전략/테마/세션/프로바이더별로 실제 수익률·승률 등을 집계하고 요약 리포트(JSON, CSV, PNG 차트)를 생성하는 도구입니다.
+
+### 18-1. 목적
+
+- **어떤 전략이 실제로 가장 잘 수행되는가?**
+- **어떤 테마가 실제 수익률이 가장 좋은가?**
+- **어떤 세션이 가장 강한가?**
+- **어떤 프로바이더가 가장 좋은가?**
+- **실제 승률과 평균 수익률은 얼마인가?**
+
+점수 기반 비교가 아닌, **실제 체결된 수익률(return_pct)** 을 기준으로 성능을 분석합니다.
+
+### 18-2. 입력 파일
+
+기본 입력:
+
+- `reports/trade_outcomes/trade_results.csv`
+
+필수 컬럼:
+
+- `timestamp_entry`, `timestamp_exit`, `symbol`, `strategy`, `theme`, `provider`, `session`, `entry_price`, `exit_price`, `return_pct`
+
+`--input` 으로 다른 경로를 지정할 수 있습니다.  
+파일이 없거나, 유효한 행이 하나도 없으면 명확한 메시지를 출력하고 안전하게 종료합니다.
+
+### 18-3. CLI 옵션
+
+| 옵션 | 설명 | 기본값 |
+|------|------|--------|
+| `--input` | trade_results.csv 경로 | `reports/trade_outcomes/trade_results.csv` |
+| `--group-by` | 집계 기준 | `strategy` |
+| `--min-trades` | 그룹 포함 최소 거래 수 | `3` |
+| `--output-dir` | 출력 디렉터리 | `reports/outcome_analysis` |
+| `--metric` | 차트에 사용할 메트릭 | `average_return` |
+
+**group-by** 지원 값: `strategy`, `theme`, `session`, `provider`
+
+**metric** 지원 값: `average_return`, `win_rate`, `trade_count`, `median_return`
+
+### 18-4. 집계 메트릭 (그룹별)
+
+각 그룹에 대해 다음을 계산합니다.
+
+- `trade_count` : 유효 거래 수
+- `win_count` : 수익 거래 수 (return_pct > 0)
+- `loss_count` : 손실/무익 거래 수 (return_pct ≤ 0)
+- `win_rate` : (win_count / trade_count) × 100
+- `average_return` : return_pct 산술 평균
+- `median_return` : return_pct 중앙값
+- `best_return` : max(return_pct)
+- `worst_return` : min(return_pct)
+
+`trade_count < min-trades` 인 그룹은 리포트에서 제외됩니다.
+
+### 18-5. 출력 파일
+
+출력 디렉터리(`--output-dir`, 기본 `reports/outcome_analysis`)에 다음 파일이 생성됩니다.
+
+- `outcome_summary_<group_by>.json` — 메타데이터 + 그룹별 요약 리스트
+- `outcome_summary_<group_by>.csv` — 그룹별 요약 테이블 (선택 메트릭 기준 내림차순 정렬)
+- `outcome_<group_by>_<metric>.png` — 선택 메트릭 기준 막대 차트 (matplotlib)
+
+예:
+
+- `outcome_summary_strategy.json`, `outcome_summary_strategy.csv`, `outcome_strategy_average_return.png`
+- `outcome_summary_theme.csv`, `outcome_theme_win_rate.png`
+
+### 18-6. 사용 예
+
+```bash
+# 기본: 전략(strategy)별 평균 수익률 분석
+python outcome_performance_analyzer.py
+
+# 테마별 분석
+python outcome_performance_analyzer.py --group-by theme
+
+# 세션별 승률 차트
+python outcome_performance_analyzer.py --group-by session --metric win_rate
+
+# 프로바이더별 거래 수, 최소 5건 이상만 포함
+python outcome_performance_analyzer.py --group-by provider --metric trade_count --min-trades 5
+```
+
+## 19. Auto Strategy Selector
+
+Outcome Performance Analyzer 가 생성한 **전략별 요약**(`outcome_summary_strategy.json`)을 읽어,  
+실제 성능 데이터 기반 **복합 점수**를 계산하고 최적 전략을 자동 추천합니다.
+
+### 19-1. 목적
+
+- 실제 거래 결과(수익률·승률)만으로 **어떤 전략을 쓸지** 자동 추천
+- 복합 점수로 전략 순위화 후 1위를 `recommended_strategy` 로 출력
+
+### 19-2. 입력
+
+- **필수**: `reports/outcome_analysis/outcome_summary_strategy.json`  
+  (outcome_performance_analyzer.py 를 `--group-by strategy` 로 실행해 생성)
+- **선택**: `reports/outcome_analysis/outcome_summary_theme.json`  
+  (메타데이터에 로드 여부만 기록, 추천 로직은 전략 요약만 사용)
+
+### 19-3. 복합 점수
+
+전략별로 다음 가중 합으로 점수를 계산합니다.
+
+- `strategy_score = (average_return × 0.5) + (win_rate × 0.3) + (median_return × 0.2)`
+- 모든 전략을 이 점수 기준 **내림차순**으로 순위 매김
+
+### 19-4. 출력
+
+- **파일**: `reports/strategy_recommendation/recommended_strategy.json`
+- **내용 예**:
+  - `generated_at`: 생성 시각 (ISO)
+  - `recommended_strategy`: 1위 전략 이름 (예: `aggressive`)
+  - `confidence`: 0~1, 1위가 2위보다 얼마나 앞서는지에 따른 신뢰도
+  - `ranking`: `[{ "strategy": "aggressive", "score": 25.3 }, ...]`
+  - `input_file`, `score_weights`, `theme_summary_loaded` 등
+
+### 19-5. 사용 예
+
+```bash
+# 기본: outcome_summary_strategy.json 기준 추천
+python auto_strategy_selector.py
+
+# 전략 요약 경로 지정
+python auto_strategy_selector.py --strategy-summary reports/outcome_analysis/outcome_summary_strategy.json
+
+# 테마 요약도 함께 로드 (메타데이터에만 반영)
+python auto_strategy_selector.py --theme-summary reports/outcome_analysis/outcome_summary_theme.json
+```
+
+## 20. Market Regime Detector
+
+최근 **실제 거래 결과**(`trade_results.csv`)만 사용해 현재 시장 국면을 판별하는 도구입니다.
+
+### 20-1. 목적
+
+- 최근 N건의 거래 수익률로 **평균·중앙값·변동성·양수 비율** 계산
+- 규칙에 따라 regime을 **VOLATILE / TRENDING / WEAK / RANGE** 중 하나로 분류
+
+### 20-2. 입력
+
+- **기본**: `reports/trade_outcomes/trade_results.csv`
+- 컬럼: `timestamp_entry`, `timestamp_exit`, `symbol`, `strategy`, `theme`, `provider`, `session`, `entry_price`, `exit_price`, `return_pct`
+- `--input` 으로 다른 경로 지정 가능  
+- 파일이 없거나 유효한 행이 없으면 메시지 출력 후 종료
+
+### 20-3. 옵션
+
+| 옵션 | 설명 | 기본값 |
+|------|------|--------|
+| `--input` | trade_results.csv 경로 | `reports/trade_outcomes/trade_results.csv` |
+| `--lookback` | 분석할 최근 유효 거래 수 | `50` |
+| `--output-dir` | 출력 디렉터리 | `reports/market_regime` |
+
+### 20-4. 계산 메트릭
+
+최근 `lookback` 건의 유효한 `return_pct`만 사용해 계산합니다.
+
+- **average_return**: return_pct 산술 평균
+- **median_return**: return_pct 중앙값
+- **volatility**: return_pct 모집단 표준편차 (`statistics.pstdev`), 값이 2개 미만이면 0
+- **positive_rate**: return_pct > 0 인 거래 비율(%)
+
+### 20-5. Regime 규칙 (순서대로 적용)
+
+1. **volatility > 5** → `VOLATILE`
+2. **average_return > 1** 이고 **positive_rate >= 55** → `TRENDING`
+3. **average_return < -1** 이고 **positive_rate < 45** → `WEAK`
+4. 그 외 → `RANGE`
+
+이름은 반드시 `VOLATILE`, `TRENDING`, `WEAK`, `RANGE` 로 출력됩니다.
+
+### 20-6. 출력
+
+- **파일**: `reports/market_regime/market_regime.json`
+- **내용 예**: `generated_at`, `input_file`, `lookback`, `trades_analyzed`, `average_return`, `median_return`, `volatility`, `positive_rate`, `regime`
+- 콘솔에는 Regime, Trades analyzed, Average return, Volatility, Positive rate 요약 출력
+
+### 20-7. 사용 예
+
+```bash
+# 기본: 최근 50건 기준
+python market_regime_detector.py
+
+# 최근 100건 기준
+python market_regime_detector.py --lookback 100
+```
+
+## 21. Strategy + Regime Fusion
+
+Auto Strategy Selector 와 Market Regime Detector 결과를 합쳐  
+**최종 추천 전략**과 설명을 한 번에 출력하는 결정 엔진입니다.
+
+### 21-1. 목적
+
+- Selector 추천 전략을 **시장 regime** 에 따라 조정
+- override 시 신뢰도 감소(fusion_confidence = selector_confidence × 0.85)
+- 사람이 읽기 쉬운 **reason** 문자열 생성
+
+### 21-2. 입력 파일
+
+- **전략**: `reports/strategy_recommendation/recommended_strategy.json`  
+  (recommended_strategy, confidence, ranking)
+- **Regime**: `reports/market_regime/market_regime.json`  
+  (regime: VOLATILE / TRENDING / WEAK / RANGE)
+
+`--strategy-input`, `--regime-input` 으로 경로 변경 가능.  
+파일 없음/JSON 오류/필수 키 누락/지원하지 않는 전략·regime 이면 메시지 출력 후 종료.
+
+### 21-3. 지원 Regime 및 Fusion 규칙
+
+| Regime   | 선호 전략   | 동작 |
+|----------|-------------|------|
+| VOLATILE | balanced    | aggressive → balanced, conservative → balanced |
+| TRENDING | aggressive  | balanced/conservative 이면 ranking 에 aggressive 있으면 aggressive 로 변경 |
+| WEAK     | conservative | balanced/aggressive → conservative |
+| RANGE    | balanced    | aggressive/conservative → balanced |
+
+### 21-4. Confidence
+
+- **selector_confidence**: Selector JSON 의 confidence 그대로 사용
+- **fusion_confidence**:  
+  - 최종 전략이 Selector 추천과 같으면 = selector_confidence  
+  - regime 으로 override 되면 = selector_confidence × 0.85 (소수점 반올림)
+
+### 21-5. 출력
+
+- **파일**: `reports/final_strategy/final_strategy.json`
+- **필드**: generated_at, selector_input_file, regime_input_file, selector_recommendation, selector_confidence, market_regime, final_strategy, fusion_confidence, regime_override_applied, reason, ranking
+- 콘솔: Selector recommendation, Market regime, Final strategy, Fusion confidence, Override applied, 저장 경로
+
+### 21-6. 사용 예
+
+```bash
+# 기본 경로 사용
+python strategy_regime_fusion.py
+
+# 입력 파일 직접 지정
+python strategy_regime_fusion.py \
+    --strategy-input reports/strategy_recommendation/recommended_strategy.json \
+    --regime-input reports/market_regime/market_regime.json
+```
+
