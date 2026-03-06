@@ -16,6 +16,9 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_INPUT = "reports/final_strategy/final_strategy.json"
