@@ -1,0 +1,34 @@
+# Sample extended universe candidates for testing.
+# This is NOT guaranteed to be complete or up-to-date.
+
+TPET
+BATL
+BHAT
+UOKA
+MDJM
+CENN
+DXS
+ELPW
+CEI
+PHUN
+HUSA
+IMPP
+ATER
+BBIG
+NXTP
+KPRX
+ZOM
+SNDL
+NILE
+OCGN
+HCMC
+COSM
+GME
+AMC
+BBBYQ
+NAKD
+PROG
+WISH
+EVFM
+BBIG
+

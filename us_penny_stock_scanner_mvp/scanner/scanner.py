@@ -16,6 +16,9 @@ log = get_logger(__name__)
 class ScanResult:
     matched: List[QuoteSnapshot]
     current_session: str
+    total_requested: int
+    fetch_success: int
+    fetch_failed: int
 
 
 class PennyStockScanner:
@@ -34,7 +37,18 @@ class PennyStockScanner:
         session = self.clock.session_of(dt_et)
         log.info("Current market session (ET): %s (%s)", session, dt_et.strftime("%Y-%m-%d %H:%M:%S %Z"))
 
-        quotes = self.provider.fetch_quotes(symbols=symbols, market_session=session)
+        # Normalize the incoming iterable so we can compute counts reliably.
+        symbol_list: list[str] = []
+        for raw in symbols:
+            s = raw.strip().upper()
+            if not s:
+                continue
+            symbol_list.append(s)
+
+        total_requested = len(symbol_list)
+        quotes = self.provider.fetch_quotes(symbols=symbol_list, market_session=session)
+        fetch_success = len(quotes)
+        fetch_failed = max(total_requested - fetch_success, 0)
 
         matched: List[QuoteSnapshot] = []
         for sym, q in quotes.items():
@@ -44,6 +58,15 @@ class PennyStockScanner:
                 # For MVP, keep non-matching details out of console; logs can be expanded later.
                 log.debug("Filtered out %s", sym)
 
-        matched.sort(key=lambda x: (x.percent_change or float("-inf"), x.volume_ratio or float("-inf")), reverse=True)
-        return ScanResult(matched=matched, current_session=session)
+        matched.sort(
+            key=lambda x: (x.percent_change or float("-inf"), x.volume_ratio or float("-inf")),
+            reverse=True,
+        )
+        return ScanResult(
+            matched=matched,
+            current_session=session,
+            total_requested=total_requested,
+            fetch_success=fetch_success,
+            fetch_failed=fetch_failed,
+        )
 

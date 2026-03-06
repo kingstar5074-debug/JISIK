@@ -1,25 +1,23 @@
 # us_penny_stock_scanner_mvp
 
 ## 1. 프로젝트 소개
-미국 주식 시장에서 **$0.05 ~ $1.00** 구간의 동전주(페니스톡)를 대상으로,
-**미국 동부시간(ET)** 기준 현재 시장 세션을 판별한 뒤,
-워치리스트(`tickers.txt`)에 있는 티커를 스캔해서 **조건을 만족하는 종목만 콘솔 표로 출력**하는 **최소 동작 MVP**입니다.
+- 미국 동전주(**$0.05 ~ $1.00**) 대상
+- `tickers.txt`를 사용하는 **watchlist 모드**에서 시작
+- `universe_candidates.txt`를 사용하는 **universe 모드**로 확장 가능
+- 현재 미국 동부시간(ET)을 기준으로
+  - premarket / regular / afterhours / closed 세션을 판별
+- **가격 / 상승률 / 거래량비율** 필터 적용 후
+- 조건을 통과한 종목을 **콘솔 표 형태로 출력**
 
 ## 2. 현재 MVP 기능
-- **워치리스트 기반 스캔**: `tickers.txt`에 적힌 티커만 조회
-- **시장 시간대 구분(ET)**: `premarket / regular / afterhours / closed`
-- **필터링**
-  - 가격: \(0.05 \le price \le 1.00\)
-  - 상승률: change% ≥ 15.0
-  - 거래량비율: volume_ratio ≥ 3.0
-- **콘솔 출력**: ticker / price / change% / volume_ratio / 세션 표시
-
-### 핵심 원칙
-- **자동매매 없음**: 주문/체결 기능 없음
-- **탐지만 수행**: 사람이 보고 수동 매매 판단
-- **Provider 교체 가능 구조 유지**: 지금은 무료(yfinance)로 동작, 이후 Polygon/Finnhub로 교체 가능
-
----
+- **watchlist 모드**
+  - `tickers.txt`에 적힌 워치리스트만 스캔
+- **universe 모드**
+  - `universe_candidates.txt`에 있는 더 큰 후보 풀을 스캔
+- 현재 ET 기준 세션 판별 (`MarketClock`)
+- Yahoo(`yfinance`) 기반 가격/거래량 조회
+- 가격 / 상승률 / 거래량비율 필터 적용
+- 조회 성공/실패 개수 집계 및 요약 출력
 
 ## 3. 프로젝트 구조
 
@@ -31,6 +29,7 @@ us_penny_stock_scanner_mvp/
   main.py
   config.py
   tickers.txt
+  universe_candidates.txt
   scanner/
     __init__.py
     models.py
@@ -41,55 +40,20 @@ us_penny_stock_scanner_mvp/
       __init__.py
       base.py
       yahoo_provider.py
+  universe/
+    __init__.py
+    base.py
+    watchlist_universe.py
+    generated_universe.py
   utils/
     __init__.py
     logger.py
     formatter.py
 ```
 
----
-
 ## 4. 설치 방법
 
-### Python
-- Python **3.11+ 권장**
-
-### 가상환경(venv)
-- 가상환경 생성 후 활성화
-
-### 의존성 설치
-- `requirements.txt` 설치
-
-### 환경변수 파일
-- `.env.example`을 복사해 `.env`를 만든 뒤 필요 시 값 조정
-
----
-
-## 5. 실행 방법
-
-프로젝트 루트에서 실행합니다.
-
-```bash
-python main.py
-```
-
----
-
-## 6. .env 설정값 설명
-
-- `MIN_PRICE`: 최소 가격 (기본 0.05)
-- `MAX_PRICE`: 최대 가격 (기본 1.00)
-- `MIN_CHANGE_PERCENT`: 최소 상승률 % (기본 15.0)
-- `MIN_VOLUME_RATIO`: 최소 거래량비율 (기본 3.0)
-- `PER_SYMBOL_DELAY_SECONDS`: 티커당 요청 딜레이(기본 0.2초)
-- `LOG_LEVEL`: 로그 레벨(기본 INFO)
-- `LOG_DIR`: 로그 폴더(기본 logs)
-
----
-
-## 7. Windows 실행 방법
-
-PowerShell 기준 예시:
+### Windows (PowerShell 기준)
 
 ```bash
 cd us_penny_stock_scanner_mvp
@@ -97,12 +61,9 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
-python main.py
 ```
 
----
-
-## 8. macOS 실행 방법
+### macOS / Linux
 
 ```bash
 cd us_penny_stock_scanner_mvp
@@ -110,45 +71,95 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-python main.py
 ```
 
----
-
-## 9. 최소 실행 테스트 기준(이번 핫픽스 목표)
-
-아래 2개가 통과하면 “실행 가능 상태”로 판단합니다.
-
-1) 문법/임포트 에러 없음:
-
-```bash
-python -m compileall .
-```
-
-2) 실제 실행 시 종료까지 정상 진행:
+## 5. 실행 방법
 
 ```bash
 python main.py
 ```
 
-정상 동작 시 최소한 아래 중 하나를 출력합니다.
-- `현재 시장 세션(ET): ...` + 결과 테이블
-- 또는 `조건 충족 종목 없음`
+- **watchlist 모드**
+  - `.env`에서 `SCAN_MODE=watchlist` (또는 기본값 유지)
+  - `tickers.txt`에 있는 티커만 스캔
+- **universe 모드**
+  - `.env`에서 `SCAN_MODE=universe`
+  - `UNIVERSE_FILE=universe_candidates.txt` 기준으로 더 많은 티커 스캔
 
-추가로 로그는 기본적으로 `logs/scanner.log`에 쌓입니다.
+실행 시 콘솔에서는 최소 다음 정보들이 출력됩니다.
+- 현재 시장 세션(ET)
+- 현재 스캔 모드(watchlist / universe)
+- 로드한 티커 수
+- 현재 필터 값
+- 스캔 결과 표 또는 `조건 충족 종목 없음`
+- 조회 성공 / 조회 실패 개수
 
----
+## 6. .env 설정값 설명
 
-## 10. 현재 MVP 한계점
-- yfinance(무료)는 **데이터 지연/누락/차단(레이트리밋)** 이 있을 수 있습니다.
-- 프리/애프터 시간대의 가격/거래량 필드는 티커별로 제공 여부가 달라 **일부 종목은 계산이 불완전**할 수 있습니다.
-- 현재는 `tickers.txt` 워치리스트 스캔만 지원합니다(전체 시장 탐색/발굴 아님).
+- `SCAN_MODE`
+  - `watchlist` : `tickers.txt` 기반 스캔 (기본값)
+  - `universe`  : `UNIVERSE_FILE`에서 티커를 로드해 스캔
+- `UNIVERSE_FILE`
+  - `SCAN_MODE=universe`일 때 사용하는 후보 풀 파일 이름
+  - 기본값: `universe_candidates.txt`
+- `MIN_PRICE`
+  - 최소 가격 (기본 `0.05`)
+- `MAX_PRICE`
+  - 최대 가격 (기본 `1.00`)
+- `MIN_CHANGE_PERCENT`
+  - 최소 상승률 % (기본 `15.0`)
+- `MIN_VOLUME_RATIO`
+  - 최소 거래량비율 (기본 `3.0`)
+- `PER_SYMBOL_DELAY_SECONDS`
+  - yfinance 호출 사이의 딜레이 초 (기본 `0.2`, 레이트리밋 완화용)
+- `LOG_LEVEL`
+  - 로그 레벨(기본 `INFO`)
+- `LOG_DIR`
+  - 로그 저장 폴더(기본 `logs`)
 
----
+## 7. 현재 MVP 동작 방식
 
-## 다음 배치 예정 기능(요청 범위 밖)
+- 이 프로젝트는 아직 **“미국 전체 시장 실시간 스캐너 완성판”이 아니다.**
+- 현재는 다음 두 가지 입력 소스 중 하나를 사용하는 **확장 준비 단계**이다.
+  - `tickers.txt` (watchlist 모드)
+  - `universe_candidates.txt` (universe 모드)
+- 스캔 시점의 **현재 세션 기준**으로 동작한다.
+  - 현재 시각이 premarket이면 premarket 기준
+  - regular면 regular 기준
+  - afterhours면 afterhours 기준
+- 각 세션에 대해
+  - 가격/상승률/거래량비율을 계산하고
+  - 필터를 통과하는 종목만 콘솔 표에 표시한다.
+
+## 8. 현재 단계 한계점
+
+- Yahoo(`yfinance`)는 **무료 데이터**이기 때문에
+  - 지연, 누락, 레이트리밋(429) 등이 발생할 수 있음
+  - 프리마켓/애프터마켓 데이터는 종목마다 제공 여부가 다름
+- `universe_candidates.txt`에는
+  - 상폐되었거나 오래된 종목이 섞여 있을 수 있으며
+  - 이런 종목은 “조회 실패”로 집계되지만 프로그램은 계속 동작한다.
+- 아직 **미국 전체 시장을 완전 커버하는 실시간 스캐너는 아니다.**
+- Polygon / Finnhub 같은 미국 데이터 API provider는 아직 연결되어 있지 않다.
+
+## 9. 다음 배치 예정 기능
+
+- Polygon / Finnhub provider 추가
+- API 기반 실제 유니버스 구성(미국 전체 동전주 후보 수집/필터)
 - 뉴스 분석
 - 악재 필터(reverse split / offering / delisting / dilution)
 - GPT 한줄 분석
 - 텔레그램 알림
+
+## 10. 실행 검증 체크리스트
+
+1. 가상환경 생성 (`python -m venv .venv` 또는 `python3 -m venv .venv`)
+2. 가상환경 활성화
+3. `pip install -r requirements.txt`
+4. `.env.example`을 `.env`로 복사
+5. `.env`에서 `SCAN_MODE` / `UNIVERSE_FILE` / 필터 값 확인
+6. `python main.py` 실행
+7. 콘솔에서 **현재 시장 세션(ET)** 이 출력되는지 확인
+8. **현재 스캔 모드(watchlist / universe)** 가 맞게 나오는지 확인
+9. **로드한 티커 수**, 필터 값, 조회 성공/실패 개수가 함께 출력되는지 확인
 

@@ -11,6 +11,10 @@ from scanner.filters import ScanFilters
 @dataclass(frozen=True)
 class AppConfig:
     tickers_file: Path
+    universe_file: Path
+    scan_mode: str
+    data_provider: str
+    polygon_api_key: str
     filters: ScanFilters
     per_symbol_delay_seconds: float
 
@@ -35,7 +39,20 @@ def load_config() -> AppConfig:
     load_dotenv()
 
     project_root = Path(__file__).resolve().parent
+
+    import os
+
     tickers_file = project_root / "tickers.txt"
+    universe_name = os.getenv("UNIVERSE_FILE", "universe_candidates.txt")
+    universe_file = project_root / universe_name
+
+    raw_mode = os.getenv("SCAN_MODE", "watchlist")
+    scan_mode = (raw_mode or "watchlist").strip().lower() or "watchlist"
+
+    raw_provider = os.getenv("DATA_PROVIDER", "yahoo")
+    data_provider = (raw_provider or "yahoo").strip().lower() or "yahoo"
+
+    polygon_api_key = os.getenv("POLYGON_API_KEY", "") or ""
 
     filters = ScanFilters(
         min_price=_get_env_float("MIN_PRICE", 0.05),
@@ -48,6 +65,10 @@ def load_config() -> AppConfig:
 
     return AppConfig(
         tickers_file=tickers_file,
+        universe_file=universe_file,
+        scan_mode=scan_mode,
+        data_provider=data_provider,
+        polygon_api_key=polygon_api_key,
         filters=filters,
         per_symbol_delay_seconds=per_symbol_delay_seconds,
     )
