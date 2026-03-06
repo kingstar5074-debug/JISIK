@@ -1,3 +1,162 @@
+## 13. Strategy Stability Analysis
+
+이 프로젝트는 단순히 **평균 점수만 비교**하는 것이 아니라,  
+여러 번의 전략 비교 결과를 누적해 **전략의 안정성(변동성 포함)** 까지 함께 평가할 수 있습니다.
+
+### 13-1. 안정성 지표 정의
+
+`summarize_strategy_reports.py` 는 각 전략별로 `average_score` 값들의 분포를 기반으로 다음 지표를 계산합니다.
+
+- `score_variance`  
+  - 여러 번 실행된 compare 리포트에서  
+    해당 전략의 `average_score` 값들에 대한 **분산(variance)**  
+  - 값이 클수록 리포트 간 점수 변동성이 크다는 의미
+- `score_std_dev`  
+  - 위와 동일한 `average_score` 값들에 대한 **표준편차(standard deviation)**  
+  - 분산의 제곱근으로, 점수 변동 정도를 직관적으로 보여줌
+- `score_range`  
+  - 여러 번 실행된 `average_score` 값들 중  
+    `max(average_score) - min(average_score)`  
+  - 가장 좋았을 때와 가장 나빴을 때 점수 차이
+- `stability_score`  
+  - 공식:  
+    \[
+    \text{stability\_score}
+      = \frac{\text{average\_score\_mean}}{1 + \text{score\_std\_dev}}
+    \]
+  - 해석:
+    - **평균 점수(average_score_mean)가 높을수록** 좋고,
+    - **표준편차(score_std_dev)가 낮을수록** 좋으므로,
+    - 두 값을 결합해 **“높은 점수를 안정적으로 유지하는 전략일수록” stability_score 가 커지는** 형태
+
+데이터 개수가 부족한 경우는 다음과 같이 안전하게 처리합니다.
+
+- `average_score` 리스트 길이 0 →  
+  - `score_variance`, `score_std_dev`, `score_range`, `stability_score` 모두 `0.0`
+- `average_score` 리스트 길이 1 →  
+  - `score_variance = 0.0`, `score_std_dev = 0.0` 으로 처리
+
+### 13-2. summarize_strategy_reports.py 의 안정성 분석
+
+```bash
+python summarize_strategy_reports.py
+```
+
+실행 시:
+
+- 각 전략별 누적 요약에 다음 값들이 포함됩니다.
+  - `average_score_mean`
+  - `score_variance`
+  - `score_std_dev`
+  - `score_range`
+  - `stability_score`
+- JSON 요약(`strategy_summary_YYYYMMDD_HHMMSS.json`)의 `strategies.*` 객체에 위 필드가 모두 저장됩니다.
+- CSV 요약(`strategy_summary_YYYYMMDD_HHMMSS.csv`)에도 동일한 열이 추가됩니다.
+- PNG 차트가 하나 추가됩니다.
+  - `strategy_summary_stability_score_YYYYMMDD_HHMMSS.png`
+  - 각 전략의 `stability_score` 를 bar chart 로 시각화
+
+콘솔에도 예를 들어 다음과 같이 출력됩니다.
+
+```text
+[balanced]
+- 평균 average_score: 21.40
+- score_variance: 5.20
+- score_std_dev: 2.28
+- score_range: 9.10
+- stability_score: 6.52
+```
+
+### 13-3. compare_summaries.py 의 avg_stability_score
+
+`compare_summaries.py` 는 여러 개의 summary JSON  
+(`strategy_summary_*.json`) 을 다시 한 번 모아서 **2차 요약(“summary of summaries”)** 을 수행합니다.
+
+```bash
+python compare_summaries.py
+```
+
+동작:
+
+- `REPORTS_DIR` 안의 `strategy_summary_*.json` 파일들을 읽고,
+- `.env` 의 `SUMMARY_OF_SUMMARIES_FILTER_*` 설정에 따라
+  - tags / provider / session 조건을 만족하는 summary 들만 필터링합니다.
+- 각 전략별로 다음 값들의 평균을 계산합니다.
+  - `avg_average_score_mean`
+  - `avg_best_strategy_win_rate`
+  - `avg_average_returned_count`
+  - `avg_stability_score`  ← **여러 summary 에 기록된 stability_score 의 평균**
+  - `summary_level_win_count`
+  - `summary_level_win_rate`
+
+출력:
+
+- JSON: `summary_compare_YYYYMMDD_HHMMSS.json`
+- CSV : `summary_compare_YYYYMMDD_HHMMSS.csv`
+- PNG :
+  1. `summary_compare_avg_score_YYYYMMDD_HHMMSS.png`
+  2. `summary_compare_win_rate_YYYYMMDD_HHMMSS.png`
+  3. `summary_compare_stability_score_YYYYMMDD_HHMMSS.png`  
+     - 각 전략의 `avg_stability_score` bar chart
+
+콘솔에는 예를 들어 다음과 같이 표시됩니다.
+
+```text
+[balanced]
+- 평균 average_score_mean: 20.40
+- 평균 best_strategy_win_rate: 32.10%
+- 평균 average_returned_count: 9.40
+- 평균 stability_score: 7.21
+- summary 레벨 승리 횟수: 3
+- summary 레벨 승리 비율: 42.8%
+```
+
+### 13-4. browse_reports.py 의 avg stability leader 표시
+
+`browse_reports.py` 를 실행하면 `REPORTS_DIR` 아래에 생성된  
+compare / summary / summary-compare 리포트 목록을 한눈에 볼 수 있습니다.
+
+```bash
+python browse_reports.py
+```
+
+특히 **summary 리포트 목록**에서는 각 파일에 대해:
+
+- `timestamp` / `valid_reports`
+- `top winner` (가장 승리가 많았던 전략)
+- `avg stability leader` (stability_score 가 가장 높은 전략)
+- 사용된 필터(tags, provider, session)
+
+을 함께 보여줍니다.
+
+예:
+
+```text
+[summary 리포트 목록]
+1. strategy_summary_20260306_140500.json
+   - timestamp: 20260306_140500 / valid_reports: 12
+   - top winner: aggressive (41.7%)
+   - avg stability leader: balanced
+   - filters: tags=[premarket, polygon], provider=polygon, session=premarket
+```
+
+이를 통해 **“평균적으로 가장 많이 이기는 전략”** 과  
+**“점수 변동성이 가장 낮아 안정적인 전략”** 을 동시에 비교할 수 있습니다.
+
+### 13-5. 여전히 포함하지 않는 기능
+
+이 프로젝트는 **수동 매매용 종목 선별**만을 목적으로 합니다.  
+이번 배치(Strategy Stability Analysis)에서도 다음 기능들은 **일절 포함하지 않습니다.**
+
+- 뉴스 분석
+- 악재(offering, reverse split 등) 자동 판별
+- GPT / LLM 기반 뉴스·이벤트 해석
+- 텔레그램/슬랙 등 알림 기능
+- 주문 API / 자동매매 / 반자동 주문 연동
+
+앞으로의 배치에서도 **“사람이 직접 최종 결정을 내리는 구조”** 를 유지한 채,  
+스캐너와 리포트 도구의 **분석 품질과 해석 편의성**만 단계적으로 강화하는 것을 목표로 합니다.
+
 # us_penny_stock_scanner_mvp
 
 ## 1. 프로젝트 소개
