@@ -45,6 +45,7 @@ def main() -> int:
     session = clock.current_session()
     console.print(f"현재 시장 세션(ET): {session}")
     console.print(f"현재 스캔 모드: {cfg.scan_mode}")
+    console.print(f"현재 데이터 provider: {cfg.data_provider}")
     console.print(f"로드한 티커 수: {len(tickers)}")
     console.print(
         f"필터: price {cfg.filters.min_price}~{cfg.filters.max_price} / "

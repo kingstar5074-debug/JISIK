@@ -16,7 +16,7 @@ def get_market_data_provider(cfg: Any) -> MarketDataProvider:
 
     DATA_PROVIDER options (via cfg.data_provider):
     - 'yahoo'   : use YahooFinanceProvider (default)
-    - 'polygon' : structure prepared, but NOT implemented in this batch
+    - 'polygon' : use PolygonProvider (requires POLYGON_API_KEY)
     """
 
     provider_name = (getattr(cfg, "data_provider", "yahoo") or "yahoo").strip().lower()
@@ -26,16 +26,19 @@ def get_market_data_provider(cfg: Any) -> MarketDataProvider:
         if not api_key:
             raise RuntimeError(
                 "DATA_PROVIDER=polygon 이지만 POLYGON_API_KEY 가 설정되어 있지 않습니다. "
-                "현재 배치에서는 구조만 준비되어 있으므로 DATA_PROVIDER=yahoo 로 사용해 주세요."
+                ".env 에 유효한 키를 설정하거나 DATA_PROVIDER=yahoo 로 변경해 주세요."
             )
 
-        raise RuntimeError(
-            "Polygon provider는 현재 설계/코드틀만 존재하며 실제 API 호출은 아직 구현되지 않았습니다. "
-            "DATA_PROVIDER=yahoo 로 되돌려 사용해 주세요."
+        cfg_obj = PolygonProviderConfig(api_key=api_key)
+        log.info("Using PolygonProvider for market data.")
+        return PolygonProvider(cfg_obj)
+
+    if provider_name == "yahoo":
+        log.info("Using YahooFinanceProvider for market data.")
+        return YahooFinanceProvider(
+            YahooProviderConfig(per_symbol_delay_seconds=getattr(cfg, "per_symbol_delay_seconds", 0.2))
         )
 
-    # Default: yahoo
-    return YahooFinanceProvider(
-        YahooProviderConfig(per_symbol_delay_seconds=getattr(cfg, "per_symbol_delay_seconds", 0.2))
-    )
+    raise ValueError(f"지원하지 않는 DATA_PROVIDER 값입니다: '{provider_name}'. (지원: yahoo, polygon)")
+
 

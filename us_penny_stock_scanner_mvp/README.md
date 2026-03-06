@@ -15,7 +15,9 @@
 - **universe 모드**
   - `universe_candidates.txt`에 있는 더 큰 후보 풀을 스캔
 - 현재 ET 기준 세션 판별 (`MarketClock`)
-- Yahoo(`yfinance`) 기반 가격/거래량 조회
+- 데이터 provider 선택:
+  - `DATA_PROVIDER=yahoo`   → Yahoo(`yfinance`) 기반
+  - `DATA_PROVIDER=polygon` → Polygon.io 기반 (API 키 필요)
 - 가격 / 상승률 / 거래량비율 필터 적용
 - 조회 성공/실패 개수 집계 및 요약 출력
 
@@ -40,6 +42,8 @@ us_penny_stock_scanner_mvp/
       __init__.py
       base.py
       yahoo_provider.py
+      polygon_provider.py
+      factory.py
   universe/
     __init__.py
     base.py
@@ -89,6 +93,7 @@ python main.py
 실행 시 콘솔에서는 최소 다음 정보들이 출력됩니다.
 - 현재 시장 세션(ET)
 - 현재 스캔 모드(watchlist / universe)
+- 현재 데이터 provider (yahoo / polygon)
 - 로드한 티커 수
 - 현재 필터 값
 - 스캔 결과 표 또는 `조건 충족 종목 없음`
@@ -96,6 +101,12 @@ python main.py
 
 ## 6. .env 설정값 설명
 
+- `DATA_PROVIDER`
+  - `yahoo`   : yfinance 기반 (기본값, 현재 안정적인 기본 경로)
+  - `polygon` : Polygon.io 기반 (API 키 필요)
+- `POLYGON_API_KEY`
+  - Polygon API 키
+  - `DATA_PROVIDER=polygon` 이면서 키가 없으면 친절한 에러 메시지를 띄우고 종료
 - `SCAN_MODE`
   - `watchlist` : `tickers.txt` 기반 스캔 (기본값)
   - `universe`  : `UNIVERSE_FILE`에서 티커를 로드해 스캔
@@ -136,15 +147,16 @@ python main.py
 - Yahoo(`yfinance`)는 **무료 데이터**이기 때문에
   - 지연, 누락, 레이트리밋(429) 등이 발생할 수 있음
   - 프리마켓/애프터마켓 데이터는 종목마다 제공 여부가 다름
+- Polygon provider는 연결되어 있지만
+  - 현재는 **입력된 symbol 리스트(워치리스트/유니버스 후보)** 기준 조회만 수행하며
+  - 아직 “미국 전체 시장 자동 유니버스 생성 + 완전 실시간 스캐너” 수준은 아니다.
 - `universe_candidates.txt`에는
   - 상폐되었거나 오래된 종목이 섞여 있을 수 있으며
   - 이런 종목은 “조회 실패”로 집계되지만 프로그램은 계속 동작한다.
-- 아직 **미국 전체 시장을 완전 커버하는 실시간 스캐너는 아니다.**
-- Polygon / Finnhub 같은 미국 데이터 API provider는 아직 연결되어 있지 않다.
 
 ## 9. 다음 배치 예정 기능
 
-- Polygon / Finnhub provider 추가
+- Polygon / Finnhub provider 고도화
 - API 기반 실제 유니버스 구성(미국 전체 동전주 후보 수집/필터)
 - 뉴스 분석
 - 악재 필터(reverse split / offering / delisting / dilution)
@@ -157,9 +169,9 @@ python main.py
 2. 가상환경 활성화
 3. `pip install -r requirements.txt`
 4. `.env.example`을 `.env`로 복사
-5. `.env`에서 `SCAN_MODE` / `UNIVERSE_FILE` / 필터 값 확인
+5. `.env`에서 `DATA_PROVIDER` / `SCAN_MODE` / `UNIVERSE_FILE` / 필터 값 확인
 6. `python main.py` 실행
 7. 콘솔에서 **현재 시장 세션(ET)** 이 출력되는지 확인
-8. **현재 스캔 모드(watchlist / universe)** 가 맞게 나오는지 확인
+8. **현재 스캔 모드(watchlist / universe)** 와 **현재 provider(yahoo / polygon)** 가 맞게 나오는지 확인
 9. **로드한 티커 수**, 필터 값, 조회 성공/실패 개수가 함께 출력되는지 확인
 
