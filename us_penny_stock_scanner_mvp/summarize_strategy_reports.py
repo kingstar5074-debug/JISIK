@@ -5,7 +5,7 @@ import json
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
-from statistics import mean
+from statistics import mean, variance, stdev
 from typing import Dict, List, Optional
 
 import matplotlib
@@ -69,8 +69,8 @@ def main() -> int:
     profile_names = ["balanced", "aggressive", "conservative"]
 
     # 누적 통계
-    returned_counts: Dict[str, List[int]] = defaultdict(list)
-    passed_counts: Dict[str, List[int]] = defaultdict(list)
+    returned_counts: Dict[str, List[float]] = defaultdict(list)
+    passed_counts: Dict[str, List[float]] = defaultdict(list)
     avg_scores: Dict[str, List[float]] = defaultdict(list)
     win_counts: Dict[str, int] = defaultdict(int)
     top_symbol_freq: Dict[str, Counter] = {
@@ -97,9 +97,9 @@ def main() -> int:
             ascore = s_data.get("average_score")
 
             if isinstance(rc, (int, float)):
-                returned_counts[name].append(int(rc))
+                returned_counts[name].append(float(rc))
             if isinstance(pc, (int, float)):
-                passed_counts[name].append(int(pc))
+                passed_counts[name].append(float(pc))
             if isinstance(ascore, (int, float)):
                 avg_scores[name].append(float(ascore))
 
@@ -138,10 +138,26 @@ def main() -> int:
     summaries: Dict[str, Dict] = {}
 
     for name in profile_names:
+        scores = avg_scores[name]
         runs = len(returned_counts[name])
         avg_ret = mean(returned_counts[name]) if returned_counts[name] else 0.0
         avg_pass = mean(passed_counts[name]) if passed_counts[name] else 0.0
-        avg_score_mean = mean(avg_scores[name]) if avg_scores[name] else 0.0
+        average_score_mean = mean(scores) if scores else 0.0
+
+        if len(scores) >= 2:
+            score_variance = variance(scores)
+            score_std_dev = stdev(scores)
+        else:
+            score_variance = 0.0
+            score_std_dev = 0.0
+
+        if scores:
+            score_range = max(scores) - min(scores)
+        else:
+            score_range = 0.0
+
+        stability_score = average_score_mean / (1.0 + score_std_dev)
+
         wins = win_counts.get(name, 0)
         win_rate = (wins / valid_reports * 100.0) if valid_reports > 0 else 0.0
 
@@ -149,7 +165,11 @@ def main() -> int:
         console.print(f"- 실행 수: {runs}")
         console.print(f"- 평균 returned_count: {avg_ret:.2f}")
         console.print(f"- 평균 passed_filters: {avg_pass:.2f}")
-        console.print(f"- 평균 average_score: {avg_score_mean:.2f}")
+        console.print(f"- 평균 average_score: {average_score_mean:.2f}")
+        console.print(f"- score_variance: {score_variance:.2f}")
+        console.print(f"- score_std_dev: {score_std_dev:.2f}")
+        console.print(f"- score_range: {score_range:.2f}")
+        console.print(f"- stability_score: {stability_score:.2f}")
         console.print(f"- 최고 점수 전략 횟수: {wins}")
         console.print(f"- 최고 점수 전략 비율: {win_rate:.1f}%")
 
@@ -166,7 +186,11 @@ def main() -> int:
             "number_of_runs": runs,
             "average_returned_count": avg_ret,
             "average_passed_filters": avg_pass,
-            "average_score_mean": avg_score_mean,
+            "average_score_mean": average_score_mean,
+            "score_variance": score_variance,
+            "score_std_dev": score_std_dev,
+            "score_range": score_range,
+            "stability_score": stability_score,
             "best_strategy_win_count": wins,
             "best_strategy_win_rate": win_rate,
         }
@@ -188,6 +212,7 @@ def main() -> int:
     csv_path = reports_dir / f"strategy_summary_{ts}.csv"
     png_avg_path = reports_dir / f"strategy_summary_avg_score_{ts}.png"
     png_win_path = reports_dir / f"strategy_summary_win_rate_{ts}.png"
+    png_stab_path = reports_dir / f"strategy_summary_stability_score_{ts}.png"
 
     summary_report = {
         "timestamp": ts,
@@ -225,6 +250,10 @@ def main() -> int:
                     "average_returned_count",
                     "average_passed_filters",
                     "average_score_mean",
+                    "score_variance",
+                    "score_std_dev",
+                    "score_range",
+                    "stability_score",
                     "best_strategy_win_count",
                     "best_strategy_win_rate",
                 ]
@@ -238,6 +267,10 @@ def main() -> int:
                         f"{s.get('average_returned_count', 0.0):.6f}",
                         f"{s.get('average_passed_filters', 0.0):.6f}",
                         f"{s.get('average_score_mean', 0.0):.6f}",
+                        f"{s.get('score_variance', 0.0):.6f}",
+                        f"{s.get('score_std_dev', 0.0):.6f}",
+                        f"{s.get('score_range', 0.0):.6f}",
+                        f"{s.get('stability_score', 0.0):.6f}",
                         s.get("best_strategy_win_count", 0),
                         f"{s.get('best_strategy_win_rate', 0.0):.2f}",
                     ]
@@ -245,7 +278,7 @@ def main() -> int:
     except Exception as e:  # pragma: no cover
         console.print(f"요약 CSV 저장 실패: {e}")
 
-    # 시각화 (평균 score / win_rate)
+    # 시각화 (평균 score / win_rate / stability_score)
     try:
         names = profile_names
         avg_scores_chart = [
@@ -272,6 +305,19 @@ def main() -> int:
         fig2.tight_layout()
         fig2.savefig(png_win_path)
         plt.close(fig2)
+
+        stability_chart = [
+            summaries[n]["stability_score"] if n in summaries else 0.0
+            for n in names
+        ]
+        fig3, ax3 = plt.subplots()
+        ax3.bar(names, stability_chart)
+        ax3.set_title("Stability score by strategy (summary)")
+        ax3.set_xlabel("Strategy")
+        ax3.set_ylabel("Stability score")
+        fig3.tight_layout()
+        fig3.savefig(png_stab_path)
+        plt.close(fig3)
     except Exception as e:  # pragma: no cover
         console.print(f"요약 차트 생성 실패: {e}")
 
@@ -280,6 +326,7 @@ def main() -> int:
     console.print(f"- CSV: {csv_path}")
     console.print(f"- 차트: {png_avg_path}")
     console.print(f"- 차트: {png_win_path}")
+    console.print(f"- 차트: {png_stab_path}")
 
     return 0
 
